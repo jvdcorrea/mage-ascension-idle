@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Mage: The Ascension — Idle</title>
+  <style>
+    :root {
+      --bg:       #0e0b16;
+      --panel:    #16112a;
+      --panel2:   #1e1835;
+      --border:   #3d2b5e;
+      --accent:   #c41e3a;
+      --magic:    #8b5cf6;
+      --text:     #e2d9f3;
+      --subtext:  #9d8ec7;
+      --gold:     #d4a843;
+      --danger:   #ef4444;
+      --xpbar:    #3b1f6e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Georgia', 'Times New Roman', serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--panel);
+      border-bottom: 2px solid var(--border);
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    header h1 {
+      font-size: 1rem;
+      color: var(--accent);
+      letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+    .resources {
+      display: flex;
+      gap: 24px;
+    }
+    .resource { text-align: center; }
+    .resource-label {
+      font-size: 0.6rem;
+      color: var(--subtext);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .resource-value {
+      font-size: 1.05rem;
+      color: var(--gold);
+      font-weight: bold;
+      min-width: 52px;
+      display: block;
+    }
+
+    /* ── Main area ── */
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Skill sidebar ── */
+    .skill-sidebar {
+      width: 165px;
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      padding: 12px 0;
+      flex-shrink: 0;
+      overflow-y: auto;
+    }
+    .sidebar-title {
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--subtext);
+      padding: 0 18px 8px;
+    }
+    .skill-tab {
+      padding: 11px 18px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: background 0.15s, border-color 0.15s;
+      color: var(--subtext);
+      font-size: 0.9rem;
+    }
+    .skill-tab:hover { background: var(--panel2); color: var(--text); }
+    .skill-tab.active {
+      border-left-color: var(--accent);
+      background: var(--panel2);
+      color: var(--text);
+    }
+    .skill-lv {
+      font-size: 0.65rem;
+      color: var(--magic);
+      margin-top: 2px;
+    }
+
+    /* ── Activity list ── */
+    .activity-panel {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 24px;
+    }
+    .panel-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .panel-header h2 {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--subtext);
+    }
+    .xp-label {
+      font-size: 0.68rem;
+      color: var(--subtext);
+    }
+    .xp-bar-wrap {
+      background: var(--xpbar);
+      border-radius: 3px;
+      height: 5px;
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .xp-bar {
+      height: 100%;
+      border-radius: 3px;
+      background: var(--magic);
+      transition: width 0.3s;
+    }
+
+    .activity-item {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 11px 16px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: border-color 0.15s, background 0.15s;
+      user-select: none;
+    }
+    .activity-item:hover:not(.locked):not(.running) {
+      border-color: var(--accent);
+      background: var(--panel2);
+    }
+    .activity-item.running {
+      border-color: var(--magic);
+      background: #1e1640;
+    }
+    .activity-item.locked {
+      opacity: 0.38;
+      cursor: not-allowed;
+    }
+    .activity-name { font-size: 0.88rem; }
+    .activity-unlock-note {
+      font-size: 0.68rem;
+      color: var(--danger);
+      margin-top: 3px;
+    }
+    .activity-meta { text-align: right; font-size: 0.72rem; color: var(--subtext); }
+    .activity-reward { color: var(--gold); margin-bottom: 2px; }
+    .activity-cost { color: var(--accent); margin-bottom: 2px; }
+    .activity-risk { color: var(--danger); font-size: 0.66rem; margin-top: 3px; }
+
+    /* ── Unlocks ── */
+    .sidebar-divider {
+      border-top: 1px solid var(--border);
+      margin: 10px 18px;
+    }
+    .unlock-item {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 13px 16px;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .unlock-item.done { border-color: var(--gold); }
+    .unlock-name { font-size: 0.9rem; }
+    .unlock-desc { font-size: 0.7rem; color: var(--subtext); margin-top: 3px; }
+    .unlock-state {
+      font-size: 0.75rem;
+      color: var(--subtext);
+      white-space: nowrap;
+      margin-left: 16px;
+    }
+    .unlock-item.done .unlock-state { color: var(--gold); }
+    .unlock-item.dimmed { opacity: 0.38; }
+
+    /* ── Upgrades ── */
+    .upgrade-group {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--subtext);
+      margin: 18px 0 8px;
+    }
+    .buy-btn {
+      background: var(--panel2);
+      border: 1px solid var(--magic);
+      border-radius: 4px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.72rem;
+      padding: 6px 14px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    .buy-btn:hover:not(:disabled) { background: #2a1f4d; }
+    .buy-btn:disabled {
+      border-color: var(--border);
+      color: var(--subtext);
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    /* ── Spheres ── */
+    .sphere-dots {
+      color: var(--magic);
+      font-size: 0.8rem;
+      letter-spacing: 3px;
+      margin-left: 8px;
+    }
+
+    /* ── Bottom bar ── */
+    .bottom-bar {
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      padding: 12px 24px;
+      flex-shrink: 0;
+      min-height: 72px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      transition: border-top-color 0.3s;
+    }
+    .bottom-bar.setback-mode { border-top-color: var(--danger); }
+    .bar-sublabel {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--subtext);
+      margin-bottom: 4px;
+    }
+    .bar-sublabel.danger { color: var(--danger); }
+    .bar-name {
+      font-size: 0.95rem;
+      margin-bottom: 7px;
+    }
+    .bar-timer {
+      font-size: 0.75rem;
+      color: var(--subtext);
+      margin-left: 8px;
+    }
+    .prog-wrap {
+      background: #1e1530;
+      border-radius: 4px;
+      height: 8px;
+      overflow: hidden;
+    }
+    .prog-fill {
+      height: 100%;
+      border-radius: 4px;
+      background: linear-gradient(to right, var(--magic), var(--accent));
+      transition: width 0.12s linear;
+    }
+    .prog-fill.setback-fill {
+      background: linear-gradient(to right, #7f1d1d, var(--danger));
+    }
+    .idle-msg {
+      color: var(--subtext);
+      font-style: italic;
+      font-size: 0.88rem;
+    }
+
+    /* ── Save controls ── */
+    .save-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .save-btn {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--subtext);
+      font-family: inherit;
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 5px 10px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .save-btn:hover { border-color: var(--magic); color: var(--text); }
+    .save-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+    .save-status {
+      font-size: 0.62rem;
+      color: var(--magic);
+      min-width: 52px;
+      text-align: right;
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
+    .save-status.show { opacity: 1; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Mage: The Ascension</h1>
+  <div class="resources">
+    <div class="resource">
+      <span class="resource-label">Total Level</span>
+      <span class="resource-value" id="r-total-level" style="color:var(--magic)">0</span>
+    </div>
+    <div class="resource">
+      <span class="resource-label">Knowledge</span>
+      <span class="resource-value" id="r-knowledge">0</span>
+    </div>
+    <div class="resource">
+      <span class="resource-label">Money</span>
+      <span class="resource-value" id="r-money">0</span>
+    </div>
+    <div class="resource">
+      <span class="resource-label">Power</span>
+      <span class="resource-value" id="r-power">0</span>
+    </div>
+    <div class="resource">
+      <span class="resource-label">Quintessence</span>
+      <span class="resource-value" id="r-quintessence">0</span>
+    </div>
+    <div class="resource">
+      <span class="resource-label">Renown</span>
+      <span class="resource-value" id="r-renown">0</span>
+    </div>
+  </div>
+  <div class="save-controls">
+    <span class="save-status" id="save-status"></span>
+    <button class="save-btn" onclick="saveGame(true)">Save</button>
+    <button class="save-btn" onclick="exportSave()">Export</button>
+    <button class="save-btn" onclick="importSave()">Import</button>
+    <button class="save-btn danger" onclick="resetSave()">Reset</button>
+  </div>
+</header>
+
+<div class="main">
+  <nav class="skill-sidebar" id="skill-sidebar"></nav>
+  <section class="activity-panel" id="activity-panel"></section>
+</div>
+
+<div class="bottom-bar" id="bottom-bar">
+  <span class="idle-msg">Select an activity to begin.</span>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// SKILLS & ACTIVITIES DATA
+// ─────────────────────────────────────────────
+const SKILLS = {
+  study: {
+    name: 'Study',
+    resource: 'knowledge',
+    risky: false,
+    activities: [
+      { name: 'Browse occult forums online',           dur: 5,   reward: 1.0  },
+      { name: "Read a beginner's occult book",         dur: 8,   reward: 1.7  },
+      { name: 'Self Study',                            dur: 12,  reward: 2.7  },
+      { name: 'Read Occult Lore',                      dur: 18,  reward: 4.2  },
+      { name: 'Attend a chantry lecture',              dur: 27,  reward: 6.5  },
+      { name: 'Study under a master',                  dur: 41,  reward: 10.0 },
+      { name: 'Browse Secret Libraries',               dur: 62,  reward: 15.5 },
+      { name: 'Decode an ancient manuscript',          dur: 93,  reward: 24.0 },
+      { name: 'Research the secrets of the universe',  dur: 140, reward: 37.0 },
+      { name: "Directly study a Sphere's manifestation", dur: 210, reward: 57.0 },
+    ],
+    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225],
+  },
+  prepare: {
+    name: 'Prepare',
+    resource: 'power',
+    risky: false,
+    activities: [
+      { name: 'Morning exercises',             dur: 5,   reward: 1.0  },
+      { name: 'Sharpen the tools',             dur: 8,   reward: 1.7  },
+      { name: 'Practice martial arts',         dur: 12,  reward: 2.7  },
+      { name: 'Study the enemy',               dur: 18,  reward: 4.2  },
+      { name: 'Spar with a willing partner',   dur: 27,  reward: 6.5  },
+      { name: 'Acquire reagents and wards',    dur: 41,  reward: 10.0 },
+      { name: 'Practice magical arts',         dur: 62,  reward: 15.5 },
+      { name: 'Study advanced battle tactics', dur: 93,  reward: 24.0 },
+      { name: 'Train with martial spirits',    dur: 140, reward: 37.0 },
+      { name: 'Embody the art of war',         dur: 210, reward: 57.0 },
+    ],
+    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225],
+  },
+  venture: {
+    name: 'Venture',
+    resource: 'money',
+    risky: false,
+    activities: [
+      { name: 'Run errands',                    dur: 5,   reward: 1.0  },
+      { name: 'Work a day job',                 dur: 8,   reward: 1.7  },
+      { name: 'Sell homemade goods',            dur: 12,  reward: 2.7  },
+      { name: 'Do freelance work',              dur: 18,  reward: 4.2  },
+      { name: 'Flip goods online',              dur: 27,  reward: 6.5  },
+      { name: 'Run a small business',           dur: 41,  reward: 10.0 },
+      { name: 'Run a medium business',          dur: 62,  reward: 15.5 },
+      { name: 'Run a large business',           dur: 93,  reward: 24.0 },
+      { name: 'Run a risky business',           dur: 140, reward: 37.0 },
+      { name: 'Let the money work for itself',  dur: 210, reward: 57.0 },
+    ],
+    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225],
+  },
+  network: {
+    name: 'Network',
+    resource: 'renown',
+    risky: false,
+    activities: [
+      { name: 'Make friends at the local bar', dur: 5,   reward: 1.0  },
+      { name: 'Volunteer in the community',    dur: 8,   reward: 1.7  },
+      { name: 'Attend a social gathering',     dur: 12,  reward: 2.7  },
+      { name: 'Join a professional club',      dur: 18,  reward: 4.2  },
+      { name: 'Befriend a local journalist',   dur: 27,  reward: 6.5  },
+      { name: 'Cultivate useful contacts',     dur: 41,  reward: 10.0 },
+      { name: 'Attend a prestigious event',    dur: 62,  reward: 15.5 },
+      { name: 'Build a public persona',        dur: 93,  reward: 24.0 },
+      { name: 'Give a public talk',            dur: 140, reward: 37.0 },
+      { name: 'Influence the consensus',       dur: 210, reward: 57.0 },
+    ],
+    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225],
+  },
+  steal: {
+    name: 'Steal',
+    resource: 'money',
+    risky: true,
+    activities: [
+      { name: 'Pickpocket a distracted tourist',     dur: 5,   reward: 1.0,  risk: 1.0 },
+      { name: 'Shoplift small items',                dur: 8,   reward: 1.7,  risk: 1.1 },
+      { name: 'Run a small scam',                    dur: 12,  reward: 2.7,  risk: 1.2 },
+      { name: 'Break into a car',                    dur: 18,  reward: 4.2,  risk: 1.3 },
+      { name: 'Con a gullible mark',                 dur: 27,  reward: 6.5,  risk: 1.4 },
+      { name: 'Burgle an empty house',               dur: 41,  reward: 10.0, risk: 1.5 },
+      { name: 'Rob a small business',                dur: 62,  reward: 15.5, risk: 1.6 },
+      { name: 'Pull a sophisticated con',            dur: 93,  reward: 24.0, risk: 1.7 },
+      { name: 'Heist a jewelry store',               dur: 140, reward: 37.0, risk: 1.8 },
+      { name: 'Steal from a heavily guarded vault',  dur: 210, reward: 57.0, risk: 1.9 },
+    ],
+    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225],
+  },
+  investigate: {
+    name: 'Investigate',
+    resource: 'knowledge',
+    risky: true,
+    activities: [
+      { name: 'Follow a rumor',                     dur: 5,   reward: 1.0,  risk: 1.0 },
+      { name: 'Stake out a location',               dur: 8,   reward: 1.7,  risk: 1.1 },
+      { name: 'Dig through public records',         dur: 12,  reward: 2.7,  risk: 1.2 },
+      { name: 'Bribe a low-level informant',        dur: 18,  reward: 4.2,  risk: 1.3 },
+      { name: 'Tail a suspicious person',           dur: 27,  reward: 6.5,  risk: 1.4 },
+      { name: 'Hack a private network',             dur: 41,  reward: 10.0, risk: 1.5 },
+      { name: 'Break into a private archive',       dur: 62,  reward: 15.5, risk: 1.6 },
+      { name: 'Infiltrate an organization',         dur: 93,  reward: 24.0, risk: 1.7 },
+      { name: 'Intercept encrypted communications', dur: 140, reward: 37.0, risk: 1.8 },
+      { name: 'Uncover a black site',               dur: 210, reward: 57.0, risk: 1.9 },
+    ],
+    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225],
+  },
+  explore: {
+    name: 'Explore',
+    resource: 'power',
+    risky: true,
+    activities: [
+      { name: 'Scout an unfamiliar neighborhood', dur: 5,   reward: 1.0,  risk: 1.0 },
+      { name: 'Explore the city outskirts',       dur: 8,   reward: 1.7,  risk: 1.1 },
+      { name: 'Enter an abandoned building',      dur: 12,  reward: 2.7,  risk: 1.2 },
+      { name: 'Venture into the wilderness',      dur: 18,  reward: 4.2,  risk: 1.3 },
+      { name: 'Navigate a dangerous district',    dur: 27,  reward: 6.5,  risk: 1.4 },
+      { name: 'Explore underground tunnels',      dur: 41,  reward: 10.0, risk: 1.5 },
+      { name: 'Infiltrate a restricted area',     dur: 62,  reward: 15.5, risk: 1.6 },
+      { name: 'Investigate a Node site',          dur: 93,  reward: 24.0, risk: 1.7 },
+      { name: 'Enter hostile mage territory',     dur: 140, reward: 37.0, risk: 1.8 },
+      { name: 'Cross into the Umbra',             dur: 210, reward: 57.0, risk: 1.9 },
+    ],
+    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225],
+  },
+  fight: {
+    name: 'Fight',
+    resource: 'renown',
+    costRes: 'power',
+    risky: false,
+    activities: [
+      { name: 'Win a street brawl',                dur: 5,   reward: 1.5,  cost: 1.0  },
+      { name: 'Defeat a common thug',              dur: 8,   reward: 2.6,  cost: 1.7  },
+      { name: 'Take down a dangerous criminal',    dur: 12,  reward: 4.1,  cost: 2.7  },
+      { name: 'Best a trained fighter',            dur: 18,  reward: 6.3,  cost: 4.2  },
+      { name: "Defeat a rival mage's apprentice",  dur: 27,  reward: 9.8,  cost: 6.5  },
+      { name: 'Win a formal magical duel',         dur: 41,  reward: 15.0, cost: 10.0 },
+      { name: 'Destroy a supernatural threat',     dur: 62,  reward: 23.3, cost: 15.5 },
+      { name: 'Defeat a seasoned mage',            dur: 93,  reward: 36.0, cost: 24.0 },
+      { name: 'Dismantle a rival cabal',           dur: 140, reward: 55.5, cost: 37.0 },
+      { name: 'Challenge a fellow Master',         dur: 210, reward: 85.5, cost: 57.0 },
+    ],
+    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225],
+  },
+  barter: {
+    name: 'Barter',
+    resource: 'quintessence',
+    costRes: 'money',
+    risky: false,
+    activities: [
+      { name: 'Trade with a street occultist',      dur: 5,   reward: 0.5,  cost: 1.0  },
+      { name: 'Buy reagents at a mystic shop',      dur: 8,   reward: 0.9,  cost: 1.7  },
+      { name: 'Deal in rare herbs and minerals',    dur: 12,  reward: 1.4,  cost: 2.7  },
+      { name: 'Negotiate with a hedge mage',        dur: 18,  reward: 2.1,  cost: 4.2  },
+      { name: 'Trade at a local occult market',     dur: 27,  reward: 3.3,  cost: 6.5  },
+      { name: 'Broker a deal at a chantry bazaar',  dur: 41,  reward: 5.0,  cost: 10.0 },
+      { name: 'Purchase Node tapping rights',       dur: 62,  reward: 7.8,  cost: 15.5 },
+      { name: 'Trade with a Tradition merchant',    dur: 93,  reward: 12.0, cost: 24.0 },
+      { name: 'Trade with a powerful Prime Mage',   dur: 140, reward: 18.5, cost: 37.0 },
+      { name: 'Control a Quintessence trade hub',   dur: 210, reward: 28.5, cost: 57.0 },
+    ],
+    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225],
+  },
+};
+
+const SKILL_IDS = Object.keys(SKILLS);
+
+// ─────────────────────────────────────────────
+// UNLOCKS
+// ─────────────────────────────────────────────
+// Conditions check lifetime totals (S.total) or other monotonic
+// values (total level), so spending resources never re-locks anything.
+const UNLOCKS = [
+  { id: 'fight',  name: 'Fight',  desc: 'Spend Power to win battles and earn Renown.',   res: 'power', amount: 10 },
+  { id: 'barter', name: 'Barter', desc: 'Spend Money to trade for Quintessence.',        res: 'money', amount: 10 },
+  { id: 'spheres', name: 'Spheres', desc: 'Spend EXP to awaken the Nine Spheres of magick.',
+    cond: () => totalLevel() >= 30, progress: () => `${totalLevel()} / 30 total level` },
+];
+
+function isSkillUnlocked(id) { return !(id in S.unlocked) || S.unlocked[id]; }
+
+function unlockMet(u) { return u.cond ? u.cond() : S.total[u.res] >= u.amount; }
+
+function checkUnlocks() {
+  let changed = false;
+  for (const u of UNLOCKS) {
+    if (!S.unlocked[u.id] && unlockMet(u)) {
+      S.unlocked[u.id] = true;
+      changed = true;
+      flashSaveStatus('Unlocked: ' + u.name);
+    }
+  }
+  if (changed) {
+    renderSidebar();
+    if (S.tab === 'unlocks') renderActivities();
+  }
+}
+
+function gainRes(res, amt) {
+  S.res[res] += amt;
+  S.total[res] += amt;
+  checkUnlocks();
+}
+
+// Consumption skills (Fight, Barter) pay their cost at the start of
+// each cycle. Returns false without deducting if it can't be afforded.
+function tryPayCost(sk, act) {
+  if (!sk.costRes) return true;
+  if (S.res[sk.costRes] < act.cost) return false;
+  S.res[sk.costRes] -= act.cost;
+  return true;
+}
+
+// ─────────────────────────────────────────────
+// UPGRADES
+// ─────────────────────────────────────────────
+// Each skill has six upgrades (at levels 5/10/25/50/80/100); each
+// doubles that skill's payoff and costs the resource the skill produces.
+const UPGRADE_LEVELS = [5, 10, 25, 50, 80, 100];
+const UPGRADE_COSTS  = [50, 250, 1250, 6250, 31250, 156250];
+const UPGRADE_NAMES = {
+  study:       ['Study Notes', 'Personal Library', 'Mnemonic Techniques', 'Lucid Comprehension', 'Akashic Recall', 'Library of the Mind'],
+  prepare:     ['Training Routine', 'Quality Gear', 'Combat Conditioning', 'Battle Meditation', 'Warded Equipment', 'Art of War Mastery'],
+  venture:     ['Side Hustle', 'Smart Bookkeeping', 'Loyal Customers', 'Market Insight', 'Diversified Portfolio', 'Golden Touch'],
+  network:     ['Business Cards', 'Charming Smile', 'Inner Circle', 'Public Reputation', 'Influential Friends', 'Voice of the Consensus'],
+  steal:       ['Lockpicks', 'Soft Soles', 'Fence Contacts', 'Master Plan', 'Phantom Hands', 'Perfect Crime'],
+  investigate: ['Notebook and Pen', 'Police Scanner', 'Informant Network', 'Forensic Eye', 'Pattern Recognition', 'All-Seeing Web'],
+  explore:     ['Sturdy Boots', 'Detailed Maps', 'Survival Kit', 'Sixth Sense', 'Umbral Compass', 'Walker Between Worlds'],
+  fight:       ['Fighting Stance', 'Trophy Collection', 'Signature Move', "Duelist's Honor", 'Feared Reputation', 'Legend of the Arena'],
+  barter:      ['Haggling Basics', 'Trusted Trader', 'Rare Goods License', 'Tass Appraisal', 'Node Connections', 'Quintessence Monopoly'],
+};
+
+const UPGRADES = [];
+for (const skillId of SKILL_IDS) {
+  UPGRADE_NAMES[skillId].forEach((name, i) => {
+    UPGRADES.push({
+      id: `${skillId}-${i}`,
+      skillId, name,
+      lvReq: UPGRADE_LEVELS[i],
+      cost: UPGRADE_COSTS[i],
+      costRes: SKILLS[skillId].resource,
+    });
+  });
+}
+
+function payoffMult(skillId) {
+  let m = 1;
+  for (const u of UPGRADES) if (u.skillId === skillId && S.upgrades[u.id]) m *= 2;
+  return m;
+}
+
+function buyUpgrade(uid) {
+  const u = UPGRADES.find(x => x.id === uid);
+  if (!u || S.upgrades[u.id]) return;
+  if (S.skills[u.skillId].lv < u.lvReq) return;
+  if (S.res[u.costRes] < u.cost) return;
+
+  S.res[u.costRes] -= u.cost;
+  S.upgrades[u.id] = true;
+  flashSaveStatus('Purchased: ' + u.name);
+  renderResources();
+  renderSidebar();
+  renderActivities();
+}
+
+// ─────────────────────────────────────────────
+// SPHERES
+// ─────────────────────────────────────────────
+// EXP is earned at 1 per skill level-up (lifetime EXP = total level)
+// and spent on Sphere levels. Available EXP is derived rather than
+// stored so it can never drift out of sync with skill levels.
+const SPHERES = [
+  { id: 'correspondence', name: 'Correspondence' },
+  { id: 'entropy',        name: 'Entropy' },
+  { id: 'forces',         name: 'Forces' },
+  { id: 'life',           name: 'Life' },
+  { id: 'matter',         name: 'Matter' },
+  { id: 'mind',           name: 'Mind' },
+  { id: 'prime',          name: 'Prime' },
+  { id: 'spirit',         name: 'Spirit' },
+  { id: 'time',           name: 'Time' },
+];
+const SPHERE_MAX = 5;
+
+function totalLevel() { return SKILL_IDS.reduce((sum, id) => sum + S.skills[id].lv, 0); }
+
+// Cost of the next level: first costs 5, then 5 × current level (5, 5, 10, 15, 20).
+function sphereCost(lv) { return lv === 0 ? 5 : 5 * lv; }
+
+function expSpent() {
+  let spent = 0;
+  for (const sp of SPHERES) {
+    for (let l = 0; l < S.spheres[sp.id]; l++) spent += sphereCost(l);
+  }
+  return spent;
+}
+function expAvail() { return totalLevel() - expSpent(); }
+
+function buySphere(id) {
+  const lv = S.spheres[id];
+  if (lv >= SPHERE_MAX) return;
+  if (expAvail() < sphereCost(lv)) return;
+  S.spheres[id]++;
+  flashSaveStatus(SPHERES.find(sp => sp.id === id).name + ' ' + S.spheres[id]);
+  renderSidebar();
+  renderActivities();
+}
+
+// ─────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────
+function xpForLevel(lv) {
+  // cumulative XP needed to reach `lv`
+  let total = 0;
+  for (let i = 1; i <= lv; i++) total += Math.floor(100 * Math.pow(1.2, i - 1));
+  return total;
+}
+function xpToNext(lv) { return Math.floor(100 * Math.pow(1.2, lv)); }
+function speed(lv)    { return 1 + lv * 0.05; }
+function effDur(baseDur, lv) { return baseDur / speed(lv); }
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// Risky activities pay a premium: +20% at risk 1.0, scaling with risk.
+function actReward(sk, act) {
+  return sk.risky ? act.reward * (1 + 0.2 * act.risk) : act.reward;
+}
+// Setback chance %: (40 × risk − skillLevel), reduced as the skill levels up.
+function setbackChance(sk, act, lv) {
+  return sk.risky ? clamp(40 * act.risk - lv, 0, 95) : 0;
+}
+// Recovery time: base 3×risk seconds, scaled by activity length (es baseline).
+function setbackDur(act) {
+  return 3 * act.risk * (act.dur / 5);
+}
+
+function fmt(n) {
+  if (n < 1000)  return (Math.round(n * 10) / 10).toFixed(1);
+  if (n < 1e6)   return (n / 1e3).toFixed(1) + 'k';
+  if (n < 1e9)   return (n / 1e6).toFixed(2) + 'M';
+  return (n / 1e9).toFixed(2) + 'B';
+}
+function fmtTime(s) {
+  if (s >= 3600) return (s / 3600).toFixed(1) + 'h';
+  if (s >= 60)   return (s / 60).toFixed(1) + 'm';
+  return s.toFixed(1) + 's';
+}
+
+// ─────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────
+const S = {
+  res:   { knowledge: 0, money: 0, power: 0, quintessence: 0, renown: 0 },
+  total: { knowledge: 0, money: 0, power: 0, quintessence: 0, renown: 0 }, // lifetime acquired
+  skills: {
+    study:       { lv: 0, xp: 0 },
+    prepare:     { lv: 0, xp: 0 },
+    venture:     { lv: 0, xp: 0 },
+    network:     { lv: 0, xp: 0 },
+    steal:       { lv: 0, xp: 0 },
+    investigate: { lv: 0, xp: 0 },
+    explore:     { lv: 0, xp: 0 },
+    fight:       { lv: 0, xp: 0 },
+    barter:      { lv: 0, xp: 0 },
+  },
+  unlocked: { fight: false, barter: false, spheres: false },
+  upgrades: {},   // purchased upgrade ids → true
+  spheres: Object.fromEntries(SPHERES.map(sp => [sp.id, 0])),
+  tab:     'study',
+  running: null,   // { skillId, idx, progress, dur }
+  setback: { on: false, remaining: 0, total: 0 },
+};
+
+// Transient notice for the bottom bar (e.g. ran out of Power); not saved.
+let haltMsg = '';
+
+// ─────────────────────────────────────────────
+// GAME LOOP
+// ─────────────────────────────────────────────
+let last = performance.now();
+
+function tick(now) {
+  const dt = (now - last) / 1000; //sanerion 1000
+  last = now;
+
+  if (S.setback.on) {
+    S.setback.remaining = Math.max(0, S.setback.remaining - dt);
+    if (S.setback.remaining <= 0) S.setback.on = false;
+    renderBottomBar();
+    requestAnimationFrame(tick);
+    return;
+  }
+
+  if (S.running) {
+    const { skillId, idx } = S.running;
+    const sk   = SKILLS[skillId];
+    const ss   = S.skills[skillId];
+    const act  = sk.activities[idx];
+    const dur  = effDur(act.dur, ss.lv);
+
+    S.running.progress += dt;
+    S.running.dur = dur;
+
+    if (S.running.progress >= dur) {
+      // Award resource (risky activities pay a risk premium,
+      // purchased upgrades double the payoff)
+      gainRes(sk.resource, actReward(sk, act) * payoffMult(skillId));
+
+      // Award XP (proportional to base duration); each level-up
+      // grants 1 EXP implicitly and may trip the total-level unlock
+      ss.xp += act.dur;
+      const lvBefore = ss.lv;
+      while (ss.xp >= xpForLevel(ss.lv + 1)) ss.lv++;
+      if (ss.lv !== lvBefore) checkUnlocks();
+
+      // Risky activities may trigger a setback on completion
+      const chance = setbackChance(sk, act, ss.lv);
+      if (chance > 0 && Math.random() * 100 < chance) {
+        const sbDur = setbackDur(act);
+        S.setback = { on: true, remaining: sbDur, total: sbDur };
+      }
+
+      // Re-queue the activity; consumption skills must afford the next cycle
+      if (tryPayCost(sk, act)) {
+        S.running = { skillId, idx, progress: 0, dur: effDur(act.dur, ss.lv) };
+      } else {
+        S.running = null;
+        haltMsg = `Not enough ${sk.costRes} to continue "${act.name}".`;
+      }
+
+      renderResources();
+      renderSidebar();
+      if (S.tab === skillId || S.tab === 'unlocks' || S.tab === 'upgrades' || S.tab === 'spheres') renderActivities();
+    }
+
+    renderBottomBar();
+  }
+
+  requestAnimationFrame(tick);
+}
+
+requestAnimationFrame(tick);
+
+// ─────────────────────────────────────────────
+// INTERACTION
+// ─────────────────────────────────────────────
+function selectTab(skillId) {
+  S.tab = skillId;
+  renderSidebar();
+  renderActivities();
+}
+
+function startActivity(skillId, idx) {
+  if (S.setback.on) return;
+  const ss = S.skills[skillId];
+  if (ss.lv < SKILLS[skillId].unlocks[idx]) return;
+
+  const sk  = SKILLS[skillId];
+  const act = sk.activities[idx];
+  if (!tryPayCost(sk, act)) {
+    S.running = null;
+    haltMsg = `Not enough ${sk.costRes} to start "${act.name}".`;
+    renderActivities();
+    renderBottomBar();
+    return;
+  }
+  haltMsg = '';
+  S.running = { skillId, idx, progress: 0, dur: effDur(act.dur, ss.lv) };
+
+  renderResources();
+  renderActivities();
+  renderBottomBar();
+}
+
+// ─────────────────────────────────────────────
+// RENDER
+// ─────────────────────────────────────────────
+function renderResources() {
+  for (const [k, v] of Object.entries(S.res)) {
+    const el = document.getElementById('r-' + k);
+    if (el) el.textContent = fmt(v);
+  }
+  const tl = document.getElementById('r-total-level');
+  if (tl) tl.textContent = totalLevel();
+}
+
+function renderSidebar() {
+  const unlockedCount = UNLOCKS.filter(u => S.unlocked[u.id]).length;
+  document.getElementById('skill-sidebar').innerHTML =
+    `<div class="sidebar-title">Skills</div>` +
+    SKILL_IDS.filter(isSkillUnlocked).map(id => {
+      const ss = S.skills[id];
+      return `<div class="skill-tab${S.tab === id ? ' active' : ''}" onclick="selectTab('${id}')">
+        ${SKILLS[id].name}
+        <div class="skill-lv">Lv ${ss.lv}</div>
+      </div>`;
+    }).join('') +
+    `<div class="sidebar-divider"></div>` +
+    (S.unlocked.spheres ? `<div class="skill-tab${S.tab === 'spheres' ? ' active' : ''}" onclick="selectTab('spheres')">
+      Spheres
+      <div class="skill-lv">${expAvail()} EXP</div>
+    </div>` : '') +
+    `<div class="skill-tab${S.tab === 'upgrades' ? ' active' : ''}" onclick="selectTab('upgrades')">
+      Upgrades
+      <div class="skill-lv">${Object.keys(S.upgrades).length} / ${UPGRADES.length}</div>
+    </div>
+    <div class="skill-tab${S.tab === 'unlocks' ? ' active' : ''}" onclick="selectTab('unlocks')">
+      Unlocks
+      <div class="skill-lv">${unlockedCount} / ${UNLOCKS.length}</div>
+    </div>`;
+}
+
+function renderUpgrades() {
+  const owned = Object.keys(S.upgrades).length;
+  let html = `
+    <div class="panel-header">
+      <h2>Upgrades</h2>
+      <span class="xp-label">${owned} / ${UPGRADES.length} purchased</span>
+    </div>
+  `;
+
+  for (const skillId of SKILL_IDS.filter(isSkillUnlocked)) {
+    const ss = S.skills[skillId];
+    html += `<div class="upgrade-group">${SKILLS[skillId].name} — Level ${ss.lv}</div>`;
+
+    for (const u of UPGRADES.filter(x => x.skillId === skillId)) {
+      const done   = !!S.upgrades[u.id];
+      const locked = ss.lv < u.lvReq;
+      const canBuy = !done && !locked && S.res[u.costRes] >= u.cost;
+
+      let state;
+      if (done)        state = '✓ Purchased';
+      else if (locked) state = `Requires Lv ${u.lvReq}`;
+      else             state = `<button class="buy-btn" onclick="buyUpgrade('${u.id}')"${canBuy ? '' : ' disabled'}>
+                                  Buy — ${fmt(u.cost)} ${u.costRes}</button>`;
+
+      html += `
+        <div class="unlock-item${done ? ' done' : ''}${locked ? ' dimmed' : ''}">
+          <div>
+            <div class="unlock-name">${u.name}</div>
+            <div class="unlock-desc">Doubles ${SKILLS[skillId].name} payoff · unlocks at Lv ${u.lvReq}</div>
+          </div>
+          <div class="unlock-state">${state}</div>
+        </div>`;
+    }
+  }
+
+  document.getElementById('activity-panel').innerHTML = html;
+}
+
+function renderUnlocks() {
+  const unlockedCount = UNLOCKS.filter(u => S.unlocked[u.id]).length;
+  let html = `
+    <div class="panel-header">
+      <h2>Unlocks</h2>
+      <span class="xp-label">${unlockedCount} / ${UNLOCKS.length} unlocked</span>
+    </div>
+  `;
+
+  UNLOCKS.forEach(u => {
+    const done  = S.unlocked[u.id];
+    const state = done
+      ? '✓ Unlocked'
+      : (u.progress ? u.progress() : `${fmt(S.total[u.res])} / ${fmt(u.amount)} ${u.res} acquired`);
+    html += `
+      <div class="unlock-item${done ? ' done' : ''}">
+        <div>
+          <div class="unlock-name">${u.name}</div>
+          <div class="unlock-desc">${u.desc}</div>
+        </div>
+        <div class="unlock-state">${state}</div>
+      </div>`;
+  });
+
+  document.getElementById('activity-panel').innerHTML = html;
+}
+
+function renderSpheres() {
+  let html = `
+    <div class="panel-header">
+      <h2>The Nine Spheres</h2>
+      <span class="xp-label">${expAvail()} EXP available</span>
+    </div>
+    <div class="unlock-desc" style="margin-bottom:14px">
+      Each skill level-up grants 1 EXP. Spend it to deepen your understanding of the Spheres.
+    </div>
+  `;
+
+  for (const sp of SPHERES) {
+    const lv     = S.spheres[sp.id];
+    const maxed  = lv >= SPHERE_MAX;
+    const cost   = sphereCost(lv);
+    const canBuy = !maxed && expAvail() >= cost;
+    const dots   = '●'.repeat(lv) + '○'.repeat(SPHERE_MAX - lv);
+
+    const state = maxed
+      ? '✓ Mastered'
+      : `<button class="buy-btn" onclick="buySphere('${sp.id}')"${canBuy ? '' : ' disabled'}>
+           Buy — ${cost} EXP</button>`;
+
+    html += `
+      <div class="unlock-item${maxed ? ' done' : ''}">
+        <div>
+          <div class="unlock-name">${sp.name} <span class="sphere-dots">${dots}</span></div>
+          <div class="unlock-desc">Level ${lv} / ${SPHERE_MAX}</div>
+        </div>
+        <div class="unlock-state">${state}</div>
+      </div>`;
+  }
+
+  document.getElementById('activity-panel').innerHTML = html;
+}
+
+function renderActivities() {
+  if (S.tab === 'unlocks')  { renderUnlocks();  return; }
+  if (S.tab === 'upgrades') { renderUpgrades(); return; }
+  if (S.tab === 'spheres')  { renderSpheres();  return; }
+
+  const id = S.tab;
+  const sk = SKILLS[id];
+  const ss = S.skills[id];
+
+  const cumXp  = ss.xp - xpForLevel(ss.lv);
+  const needed = xpToNext(ss.lv);
+  const pct    = Math.min(100, (cumXp / needed) * 100);
+
+  let html = `
+    <div class="panel-header">
+      <h2>${sk.name} — Level ${ss.lv}</h2>
+      <span class="xp-label">${Math.floor(cumXp)} / ${needed} XP</span>
+    </div>
+    <div class="xp-bar-wrap"><div class="xp-bar" style="width:${pct}%"></div></div>
+  `;
+
+  sk.activities.forEach((act, i) => {
+    const unlockLv = sk.unlocks[i];
+    const locked   = ss.lv < unlockLv;
+    const running  = S.running && S.running.skillId === id && S.running.idx === i;
+    const dur      = effDur(act.dur, ss.lv);
+
+    html += `
+      <div class="activity-item${locked ? ' locked' : ''}${running ? ' running' : ''}"
+           onclick="startActivity('${id}', ${i})">
+        <div>
+          <div class="activity-name">${act.name}</div>
+          ${locked ? `<div class="activity-unlock-note">Requires level ${unlockLv}</div>` : ''}
+        </div>
+        <div class="activity-meta">
+          ${sk.costRes && !locked ? `<div class="activity-cost">−${fmt(act.cost)} ${sk.costRes}</div>` : ''}
+          <div class="activity-reward">+${fmt(actReward(sk, act) * payoffMult(id))} ${sk.resource}</div>
+          <div>${fmtTime(dur)}</div>
+          ${sk.risky && !locked ? `<div class="activity-risk">⚠ ${Math.round(setbackChance(sk, act, ss.lv))}% · ${fmtTime(setbackDur(act))} recovery</div>` : ''}
+        </div>
+      </div>`;
+  });
+
+  document.getElementById('activity-panel').innerHTML = html;
+}
+
+function renderBottomBar() {
+  const bar = document.getElementById('bottom-bar');
+
+  if (S.setback.on) {
+    const pct = (1 - S.setback.remaining / S.setback.total) * 100;
+    bar.className = 'bottom-bar setback-mode';
+    bar.innerHTML = `
+      <div class="bar-sublabel danger">Recovering — the mage suffers the consequences</div>
+      <div class="bar-name">Setback<span class="bar-timer">${fmtTime(S.setback.remaining)} remaining</span></div>
+      <div class="prog-wrap"><div class="prog-fill setback-fill" style="width:${pct}%"></div></div>`;
+    return;
+  }
+
+  if (!S.running) {
+    bar.className = 'bottom-bar';
+    bar.innerHTML = `<span class="idle-msg">${haltMsg || 'Select an activity to begin.'}</span>`;
+    return;
+  }
+
+  const { skillId, idx, progress, dur } = S.running;
+  const act  = SKILLS[skillId].activities[idx];
+  const pct  = Math.min(100, (progress / dur) * 100);
+  const rem  = Math.max(0, dur - progress);
+
+  bar.className = 'bottom-bar';
+  bar.innerHTML = `
+    <div class="bar-sublabel">Currently performing</div>
+    <div class="bar-name">${act.name}<span class="bar-timer">${fmtTime(rem)}</span></div>
+    <div class="prog-wrap"><div class="prog-fill" style="width:${pct}%"></div></div>`;
+}
+
+// ─────────────────────────────────────────────
+// SAVE / LOAD
+// ─────────────────────────────────────────────
+const SAVE_KEY = 'mage-idle-save';
+const SAVE_VERSION = 1;
+const AUTOSAVE_INTERVAL = 15000;
+
+function serializeSave() {
+  return JSON.stringify({
+    v: SAVE_VERSION,
+    savedAt: Date.now(),
+    res: S.res,
+    total: S.total,
+    skills: S.skills,
+    unlocked: S.unlocked,
+    upgrades: S.upgrades,
+    spheres: S.spheres,
+    tab: S.tab,
+    running: S.running,
+    setback: S.setback,
+  });
+}
+
+function saveGame(manual) {
+  try {
+    localStorage.setItem(SAVE_KEY, serializeSave());
+    flashSaveStatus(manual ? 'Saved' : 'Autosaved');
+  } catch (e) {
+    flashSaveStatus('Save failed');
+  }
+}
+
+// Merge a parsed save into S, validating every field so old or
+// hand-edited saves (and future schema changes) can't break the game.
+function applySave(d) {
+  if (!d || typeof d !== 'object') return;
+
+  if (d.res) {
+    for (const k of Object.keys(S.res)) {
+      if (typeof d.res[k] === 'number' && isFinite(d.res[k])) S.res[k] = d.res[k];
+    }
+  }
+  for (const k of Object.keys(S.total)) {
+    if (d.total && typeof d.total[k] === 'number' && isFinite(d.total[k])) {
+      S.total[k] = d.total[k];
+    } else {
+      // Older saves had no lifetime totals; the current balance is the
+      // best lower bound for what was acquired.
+      S.total[k] = S.res[k];
+    }
+  }
+  if (d.unlocked) {
+    for (const k of Object.keys(S.unlocked)) S.unlocked[k] = !!d.unlocked[k];
+  }
+  S.upgrades = {};
+  if (d.upgrades) {
+    for (const u of UPGRADES) if (d.upgrades[u.id]) S.upgrades[u.id] = true;
+  }
+  S.spheres = Object.fromEntries(SPHERES.map(sp => [sp.id, 0]));
+  if (d.spheres) {
+    for (const sp of SPHERES) {
+      const v = d.spheres[sp.id];
+      if (typeof v === 'number' && isFinite(v)) {
+        S.spheres[sp.id] = clamp(Math.floor(v), 0, SPHERE_MAX);
+      }
+    }
+  }
+  if (d.skills) {
+    for (const id of SKILL_IDS) {
+      const sv = d.skills[id];
+      if (!sv) continue;
+      if (typeof sv.lv === 'number' && isFinite(sv.lv)) S.skills[id].lv = Math.max(0, Math.floor(sv.lv));
+      if (typeof sv.xp === 'number' && isFinite(sv.xp)) S.skills[id].xp = Math.max(0, sv.xp);
+    }
+  }
+  if (d.tab === 'unlocks' || d.tab === 'upgrades' ||
+      (d.tab === 'spheres' && S.unlocked.spheres) ||
+      (SKILL_IDS.includes(d.tab) && isSkillUnlocked(d.tab))) S.tab = d.tab;
+
+  S.running = null;
+  if (d.running && SKILLS[d.running.skillId] &&
+      SKILLS[d.running.skillId].activities[d.running.idx]) {
+    const { skillId, idx } = d.running;
+    const dur = effDur(SKILLS[skillId].activities[idx].dur, S.skills[skillId].lv);
+    S.running = {
+      skillId, idx, dur,
+      progress: clamp(typeof d.running.progress === 'number' ? d.running.progress : 0, 0, dur),
+    };
+  }
+
+  S.setback = { on: false, remaining: 0, total: 0 };
+  if (d.setback && d.setback.on &&
+      typeof d.setback.remaining === 'number' && d.setback.remaining > 0) {
+    const total = typeof d.setback.total === 'number' && d.setback.total > 0
+      ? d.setback.total : d.setback.remaining;
+    S.setback = { on: true, remaining: Math.min(d.setback.remaining, total), total };
+  }
+}
+
+function loadGame() {
+  const raw = localStorage.getItem(SAVE_KEY);
+  if (!raw) return false;
+  try {
+    applySave(JSON.parse(raw));
+    return true;
+  } catch (e) {
+    console.warn('Could not load save:', e);
+    return false;
+  }
+}
+
+function exportSave() {
+  prompt('Copy this save code (Ctrl+C):', btoa(serializeSave()));
+}
+
+function importSave() {
+  const code = prompt('Paste your save code:');
+  if (!code) return;
+  try {
+    applySave(JSON.parse(atob(code.trim())));
+    saveGame();
+    renderAll();
+    flashSaveStatus('Imported');
+  } catch (e) {
+    alert('That save code is invalid.');
+  }
+}
+
+function resetSave() {
+  if (!confirm('Erase all progress and start over? This cannot be undone.')) return;
+  localStorage.removeItem(SAVE_KEY);
+  location.reload();
+}
+
+let saveStatusTimer = null;
+function flashSaveStatus(msg) {
+  const el = document.getElementById('save-status');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(saveStatusTimer);
+  saveStatusTimer = setTimeout(() => el.classList.remove('show'), 2000);
+}
+
+setInterval(() => saveGame(false), AUTOSAVE_INTERVAL);
+window.addEventListener('beforeunload', () => {
+  try { localStorage.setItem(SAVE_KEY, serializeSave()); } catch (e) {}
+});
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+function renderAll() {
+  renderResources();
+  renderSidebar();
+  renderActivities();
+  renderBottomBar();
+}
+
+loadGame();
+checkUnlocks();
+renderAll();
+</script>
+</body>
+</html>
