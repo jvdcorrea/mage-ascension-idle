@@ -327,6 +327,78 @@
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-track { background: var(--bg); }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ── Ritual Timing minigame ── */
+    .ritual-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(14,11,22,0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+    }
+    .ritual-modal {
+      background: var(--panel);
+      border: 2px solid var(--magic);
+      border-radius: 12px;
+      padding: 24px 32px;
+      text-align: center;
+      min-width: 240px;
+    }
+    .ritual-modal h3 {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--subtext);
+      margin-bottom: 14px;
+    }
+    .ritual-hint {
+      font-size: 0.7rem;
+      color: var(--subtext);
+      margin-top: 10px;
+    }
+    .ritual-result-text {
+      font-size: 1.05rem;
+      margin-top: 10px;
+      min-height: 1.4em;
+      font-weight: bold;
+    }
+    .ritual-btn {
+      background: transparent;
+      border: 1px solid var(--magic);
+      border-radius: 4px;
+      color: var(--magic);
+      font-family: inherit;
+      font-size: 0.68rem;
+      padding: 4px 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s, color 0.15s;
+    }
+    .ritual-btn:hover:not(:disabled) { background: #2a1f4d; color: var(--text); }
+    .ritual-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ── Paradox Containment minigame ── */
+    .paradox-crack {
+      position: fixed;
+      width: 38px;
+      height: 38px;
+      cursor: pointer;
+      z-index: 150;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      user-select: none;
+      color: var(--danger);
+      filter: drop-shadow(0 0 7px #ef4444);
+      animation: crackPulse 0.55s ease-in-out infinite alternate;
+    }
+    @keyframes crackPulse {
+      from { transform: scale(0.82); opacity: 0.55; }
+      to   { transform: scale(1.18); opacity: 1.0; }
+    }
   </style>
 </head>
 <body>
@@ -697,10 +769,10 @@ function buySphere(id) {
 function xpForLevel(lv) {
   // cumulative XP needed to reach `lv`
   let total = 0;
-  for (let i = 1; i <= lv; i++) total += Math.floor(100 * Math.pow(1.2, i - 1));
+  for (let i = 1; i <= lv; i++) total += Math.floor(35 * Math.pow(1.2, i - 1));
   return total;
 }
-function xpToNext(lv) { return Math.floor(100 * Math.pow(1.2, lv)); }
+function xpToNext(lv) { return Math.floor(35 * Math.pow(1.2, lv)); }
 function speed(lv)    { return 1 + lv * 0.05; }
 function effDur(baseDur, lv) { return baseDur / speed(lv); }
 
@@ -759,18 +831,27 @@ const S = {
 // Transient notice for the bottom bar (e.g. ran out of Power); not saved.
 let haltMsg = '';
 
+// ── Ritual Timing minigame state ─────────────
+let ritual = { open: false, angle: 0, speed: 115, lastTs: null };
+let ritualBonus = 0;    // fraction added to next reward (0.2 = +20%, 0.5 = +50%)
+let ritualUsed  = false; // one ritual per activity cycle
+
+// ── Paradox Containment minigame state ───────
+let cracks = [];
+let crackIntervalId = null;
+
 // ─────────────────────────────────────────────
 // GAME LOOP
 // ─────────────────────────────────────────────
 let last = performance.now();
 
 function tick(now) {
-  const dt = (now - last) / 1000; //sanerion 1000
+  const dt = (now - last) / 50; //sanerion // default: 1000
   last = now;
 
   if (S.setback.on) {
     S.setback.remaining = Math.max(0, S.setback.remaining - dt);
-    if (S.setback.remaining <= 0) S.setback.on = false;
+    if (S.setback.remaining <= 0) { S.setback.on = false; stopParadoxMinigame(); }
     renderBottomBar();
     requestAnimationFrame(tick);
     return;
@@ -787,9 +868,9 @@ function tick(now) {
     S.running.dur = dur;
 
     if (S.running.progress >= dur) {
-      // Award resource (risky activities pay a risk premium,
-      // purchased upgrades double the payoff)
-      gainRes(sk.resource, actReward(sk, act) * payoffMult(skillId));
+      // Award resource — apply any pending ritual bonus, then reset it
+      const rb = ritualBonus; ritualBonus = 0; ritualUsed = false;
+      gainRes(sk.resource, actReward(sk, act) * payoffMult(skillId) * (1 + rb));
 
       // Award XP (proportional to base duration); each level-up
       // grants 1 EXP implicitly and may trip the total-level unlock
@@ -803,6 +884,7 @@ function tick(now) {
       if (chance > 0 && Math.random() * 100 < chance) {
         const sbDur = setbackDur(act);
         S.setback = { on: true, remaining: sbDur, total: sbDur };
+        startParadoxMinigame();
       }
 
       // Re-queue the activity; consumption skills must afford the next cycle
@@ -850,6 +932,8 @@ function startActivity(skillId, idx) {
     return;
   }
   haltMsg = '';
+  ritualBonus = 0;
+  ritualUsed  = false;
   S.running = { skillId, idx, progress: 0, dur: effDur(act.dur, ss.lv) };
 
   renderResources();
@@ -1066,10 +1150,22 @@ function renderBottomBar() {
   const pct  = Math.min(100, (progress / dur) * 100);
   const rem  = Math.max(0, dur - progress);
 
+  let ritualLabel;
+  if (ritual.open)          ritualLabel = '✦ Channeling...';
+  else if (!ritualUsed)     ritualLabel = '✦ Perform Ritual';
+  else if (ritualBonus > 0) ritualLabel = `✦ +${Math.round(ritualBonus * 100)}% queued`;
+  else                      ritualLabel = '✦ Ritual Missed';
+  const ritualDisabled = ritual.open || ritualUsed;
+
   bar.className = 'bottom-bar';
   bar.innerHTML = `
-    <div class="bar-sublabel">Currently performing</div>
-    <div class="bar-name">${act.name}<span class="bar-timer">${fmtTime(rem)}</span></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+      <div>
+        <div class="bar-sublabel">Currently performing</div>
+        <div class="bar-name">${act.name}<span class="bar-timer">${fmtTime(rem)}</span></div>
+      </div>
+      <button class="ritual-btn" onclick="openRitual()"${ritualDisabled ? ' disabled' : ''}>${ritualLabel}</button>
+    </div>
     <div class="prog-wrap"><div class="prog-fill" style="width:${pct}%"></div></div>`;
 }
 
