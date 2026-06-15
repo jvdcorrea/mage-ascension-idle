@@ -6,8 +6,9 @@ Play as a newly Awakened mage 🧙‍♂️ navigating occult societies 🕯️,
 
 ## ▶️ Play
 
-Open `mage-idle.html` in any modern browser — no build step required. 🖥️✨
-Or click [here](https://jvdcorrea.github.io/mage-ascension-idle/).
+Click [here](https://jvdcorrea.github.io/mage-ascension-idle/).
+
+Or download and open `index.html` in any modern browser — no build step required. 🖥️✨
 
 ## 📜 Design Document
 
