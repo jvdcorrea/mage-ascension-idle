@@ -327,78 +327,6 @@
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-track { background: var(--bg); }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-    /* ── Ritual Timing minigame ── */
-    .ritual-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(14,11,22,0.85);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 200;
-    }
-    .ritual-modal {
-      background: var(--panel);
-      border: 2px solid var(--magic);
-      border-radius: 12px;
-      padding: 24px 32px;
-      text-align: center;
-      min-width: 240px;
-    }
-    .ritual-modal h3 {
-      font-size: 0.72rem;
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      color: var(--subtext);
-      margin-bottom: 14px;
-    }
-    .ritual-hint {
-      font-size: 0.7rem;
-      color: var(--subtext);
-      margin-top: 10px;
-    }
-    .ritual-result-text {
-      font-size: 1.05rem;
-      margin-top: 10px;
-      min-height: 1.4em;
-      font-weight: bold;
-    }
-    .ritual-btn {
-      background: transparent;
-      border: 1px solid var(--magic);
-      border-radius: 4px;
-      color: var(--magic);
-      font-family: inherit;
-      font-size: 0.68rem;
-      padding: 4px 12px;
-      cursor: pointer;
-      white-space: nowrap;
-      transition: background 0.15s, color 0.15s;
-    }
-    .ritual-btn:hover:not(:disabled) { background: #2a1f4d; color: var(--text); }
-    .ritual-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-
-    /* ── Paradox Containment minigame ── */
-    .paradox-crack {
-      position: fixed;
-      width: 38px;
-      height: 38px;
-      cursor: pointer;
-      z-index: 150;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 22px;
-      user-select: none;
-      color: var(--danger);
-      filter: drop-shadow(0 0 7px #ef4444);
-      animation: crackPulse 0.55s ease-in-out infinite alternate;
-    }
-    @keyframes crackPulse {
-      from { transform: scale(0.82); opacity: 0.55; }
-      to   { transform: scale(1.18); opacity: 1.0; }
-    }
   </style>
 </head>
 <body>
@@ -632,6 +560,8 @@ const UNLOCKS = [
   { id: 'barter', name: 'Barter', desc: 'Spend Money to trade for Quintessence.',        res: 'money', amount: 10 },
   { id: 'spheres', name: 'Spheres', desc: 'Spend EXP to awaken the Nine Spheres of magick.',
     cond: () => totalLevel() >= 30, progress: () => `${totalLevel()} / 30 total level` },
+  { id: 'craft', name: 'Craft', desc: 'Channel Quintessence into talismans that grant temporary boons. Deepens with the Prime sphere.',
+    cond: () => S.spheres.prime >= 1, progress: () => `Prime ${S.spheres.prime} / 1` },
 ];
 
 function isSkillUnlocked(id) { return !(id in S.unlocked) || S.unlocked[id]; }
@@ -661,10 +591,11 @@ function gainRes(res, amt) {
 
 // Consumption skills (Fight, Barter) pay their cost at the start of
 // each cycle. Returns false without deducting if it can't be afforded.
-function tryPayCost(sk, act) {
+function tryPayCost(skillId, sk, act) {
   if (!sk.costRes) return true;
-  if (S.res[sk.costRes] < act.cost) return false;
-  S.res[sk.costRes] -= act.cost;
+  const cost = actCost(skillId, act);
+  if (S.res[sk.costRes] < cost) return false;
+  S.res[sk.costRes] -= cost;
   return true;
 }
 
@@ -764,6 +695,134 @@ function buySphere(id) {
 }
 
 // ─────────────────────────────────────────────
+// CRAFT
+// ─────────────────────────────────────────────
+// The mage channels Quintessence into talismans that grant temporary
+// boons. Recipes unlock in groups ("tiers") as the Prime sphere deepens.
+// Each item's effect lasts either for a number of matching activity
+// completions ('charges') or for a span of game-time ('time', amount in
+// seconds). Active items are listed in the Craft menu so the player can
+// always see what is currently in effect.
+//
+// effect types (they combine multiplicatively across active items):
+//   reward  → ×payoff of the produced resource      (mag > 1)
+//   speed   → ×activity speed, i.e. shorter durations (mag > 1)
+//   xp      → ×XP gained                             (mag > 1)
+//   setback → ×setback chance on risky activities    (mag < 1, a reduction)
+//   cost    → ×resource cost of consumption skills   (mag < 1, a reduction)
+// scope is 'all', or a list of skill ids the effect applies to.
+const CRAFT_ITEMS = [
+  // ── Tier 1 · Prime 1 — Lesser Charms (focused, charge-based) ──
+  { id:'scholars_lens', tier:1, name:"Scholar's Lens",
+    effect:'reward', mag:1.5, scope:['study','investigate'],
+    mode:'charges', amount:10, cost:30,
+    desc:'Next 10 Study or Investigate activities yield +50% reward.' },
+  { id:'warriors_brand', tier:1, name:"Warrior's Brand",
+    effect:'reward', mag:1.5, scope:['prepare','fight'],
+    mode:'charges', amount:10, cost:30,
+    desc:'Next 10 Prepare or Fight activities yield +50% reward.' },
+  { id:'merchants_seal', tier:1, name:"Merchant's Seal",
+    effect:'reward', mag:1.5, scope:['venture','barter'],
+    mode:'charges', amount:10, cost:30,
+    desc:'Next 10 Venture or Barter activities yield +50% reward.' },
+
+  // ── Tier 2 · Prime 2 — Warded Talismans (broad, time-based) ──
+  { id:'hourglass_focus', tier:2, name:'Hourglass of Focus',
+    effect:'speed', mag:1.5, scope:'all',
+    mode:'time', amount:3600, cost:80,
+    desc:'For the next 1 hour, all activities are 50% faster.' },
+  { id:'charm_insight', tier:2, name:'Charm of Insight',
+    effect:'xp', mag:2, scope:'all',
+    mode:'time', amount:3600, cost:80,
+    desc:'For the next 1 hour, all activities grant double XP.' },
+  { id:'ward_safety', tier:2, name:'Ward of Safety',
+    effect:'setback', mag:0.4, scope:'all',
+    mode:'time', amount:7200, cost:70,
+    desc:'For the next 2 hours, risky activities are 60% less likely to backfire.' },
+
+  // ── Tier 3 · Prime 3 — Greater Relics (potent, mixed) ──
+  { id:'philosophers_stone', tier:3, name:"Philosopher's Stone",
+    effect:'reward', mag:2, scope:'all',
+    mode:'charges', amount:15, cost:200,
+    desc:'Next 15 activities of any kind yield double resources.' },
+  { id:'sigil_mastery', tier:3, name:'Sigil of Mastery',
+    effect:'speed', mag:2, scope:'all',
+    mode:'charges', amount:12, cost:220,
+    desc:'Next 12 activities of any kind are twice as fast.' },
+  { id:'talisman_frugality', tier:3, name:'Talisman of Frugality',
+    effect:'cost', mag:0.5, scope:['fight','barter'],
+    mode:'time', amount:7200, cost:150,
+    desc:'For the next 2 hours, Fight and Barter cost half as much.' },
+];
+const CRAFT_BY_ID = Object.fromEntries(CRAFT_ITEMS.map(it => [it.id, it]));
+const CRAFT_MAX_TIER = Math.max(...CRAFT_ITEMS.map(it => it.tier));
+
+// Highest craftable tier — one tier per level of the Prime sphere.
+function craftTierUnlocked() { return S.spheres.prime; }
+
+// Combined multiplier from every active item matching (skillId, effect).
+function craftFactor(skillId, effect) {
+  let f = 1;
+  for (const a of S.craftActive) {
+    const def = CRAFT_BY_ID[a.id];
+    if (!def || def.effect !== effect) continue;
+    if (def.scope !== 'all' && !def.scope.includes(skillId)) continue;
+    f *= def.mag;
+  }
+  return f;
+}
+
+function actCost(skillId, act) {
+  return act.cost * craftFactor(skillId, 'cost');
+}
+
+// Spend one charge from each charge-based item that applies to skillId,
+// dropping any item whose charges run out.
+function consumeCraftCharges(skillId) {
+  for (let i = S.craftActive.length - 1; i >= 0; i--) {
+    const a   = S.craftActive[i];
+    const def = CRAFT_BY_ID[a.id];
+    if (!def || def.mode !== 'charges') continue;
+    if (def.scope !== 'all' && !def.scope.includes(skillId)) continue;
+    if (--a.remaining <= 0) S.craftActive.splice(i, 1);
+  }
+}
+
+// Tick down time-based items; returns true if any item expired this frame.
+function updateCraftTimers(dt) {
+  let removed = false;
+  for (let i = S.craftActive.length - 1; i >= 0; i--) {
+    const a   = S.craftActive[i];
+    const def = CRAFT_BY_ID[a.id];
+    if (!def || def.mode !== 'time') continue;
+    a.remaining -= dt;
+    if (a.remaining <= 0) { S.craftActive.splice(i, 1); removed = true; }
+  }
+  return removed;
+}
+
+function hasActiveCraftTimer() {
+  return S.craftActive.some(a => { const d = CRAFT_BY_ID[a.id]; return d && d.mode === 'time'; });
+}
+
+function craftItem(id) {
+  const def = CRAFT_BY_ID[id];
+  if (!def) return;
+  if (craftTierUnlocked() < def.tier) return;
+  if (S.res.quintessence < def.cost) return;
+
+  S.res.quintessence -= def.cost;
+  const existing = S.craftActive.find(a => a.id === id);
+  if (existing) existing.remaining = def.amount;   // recrafting refreshes it
+  else S.craftActive.push({ id, remaining: def.amount });
+
+  flashSaveStatus('Crafted: ' + def.name);
+  renderResources();
+  renderSidebar();
+  renderActivities();
+}
+
+// ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
 function xpForLevel(lv) {
@@ -774,7 +833,11 @@ function xpForLevel(lv) {
 }
 function xpToNext(lv) { return Math.floor(35 * Math.pow(1.2, lv)); }
 function speed(lv)    { return 1 + lv * 0.05; }
-function effDur(baseDur, lv) { return baseDur / speed(lv); }
+// A crafted 'speed' boon shortens durations for the matching skill.
+function effDur(baseDur, lv, skillId) {
+  const cs = skillId ? craftFactor(skillId, 'speed') : 1;
+  return baseDur / (speed(lv) * cs);
+}
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
@@ -820,9 +883,10 @@ const S = {
     fight:       { lv: 0, xp: 0 },
     barter:      { lv: 0, xp: 0 },
   },
-  unlocked: { fight: false, barter: false, spheres: false },
+  unlocked: { fight: false, barter: false, spheres: false, craft: false },
   upgrades: {},   // purchased upgrade ids → true
   spheres: Object.fromEntries(SPHERES.map(sp => [sp.id, 0])),
+  craftActive: [], // active crafted boons → [{ id, remaining }] (remaining = charges or seconds)
   tab:     'study',
   running: null,   // { skillId, idx, progress, dur }
   setback: { on: false, remaining: 0, total: 0 },
@@ -831,27 +895,23 @@ const S = {
 // Transient notice for the bottom bar (e.g. ran out of Power); not saved.
 let haltMsg = '';
 
-// ── Ritual Timing minigame state ─────────────
-let ritual = { open: false, angle: 0, speed: 115, lastTs: null };
-let ritualBonus = 0;    // fraction added to next reward (0.2 = +20%, 0.5 = +50%)
-let ritualUsed  = false; // one ritual per activity cycle
-
-// ── Paradox Containment minigame state ───────
-let cracks = [];
-let crackIntervalId = null;
-
 // ─────────────────────────────────────────────
 // GAME LOOP
 // ─────────────────────────────────────────────
 let last = performance.now();
 
 function tick(now) {
-  const dt = (now - last) / 50; //sanerion // default: 1000
+  const dt = (now - last) / 1000; //speed // default: 1000
   last = now;
+
+  // Crafted time-based boons count down in real time, even during a setback.
+  const craftRemoved = updateCraftTimers(dt);
+  if (craftRemoved) renderSidebar();
+  if (S.tab === 'craft' && (craftRemoved || hasActiveCraftTimer())) renderActivities();
 
   if (S.setback.on) {
     S.setback.remaining = Math.max(0, S.setback.remaining - dt);
-    if (S.setback.remaining <= 0) { S.setback.on = false; stopParadoxMinigame(); }
+    if (S.setback.remaining <= 0) { S.setback.on = false; }
     renderBottomBar();
     requestAnimationFrame(tick);
     return;
@@ -862,34 +922,35 @@ function tick(now) {
     const sk   = SKILLS[skillId];
     const ss   = S.skills[skillId];
     const act  = sk.activities[idx];
-    const dur  = effDur(act.dur, ss.lv);
+    const dur  = effDur(act.dur, ss.lv, skillId);
 
     S.running.progress += dt;
     S.running.dur = dur;
 
     if (S.running.progress >= dur) {
-      // Award resource — apply any pending ritual bonus, then reset it
-      const rb = ritualBonus; ritualBonus = 0; ritualUsed = false;
-      gainRes(sk.resource, actReward(sk, act) * payoffMult(skillId) * (1 + rb));
+      // Award resource — apply upgrade multiplier and any crafted boon
+      gainRes(sk.resource, actReward(sk, act) * payoffMult(skillId) * craftFactor(skillId, 'reward'));
 
-      // Award XP (proportional to base duration); each level-up
-      // grants 1 EXP implicitly and may trip the total-level unlock
-      ss.xp += act.dur;
+      // Award XP (proportional to base duration, boosted by any 'xp' boon);
+      // each level-up grants 1 EXP implicitly and may trip an unlock.
+      ss.xp += act.dur * craftFactor(skillId, 'xp');
       const lvBefore = ss.lv;
       while (ss.xp >= xpForLevel(ss.lv + 1)) ss.lv++;
       if (ss.lv !== lvBefore) checkUnlocks();
 
-      // Risky activities may trigger a setback on completion
-      const chance = setbackChance(sk, act, ss.lv);
+      // Risky activities may trigger a setback on completion ('setback' boons reduce the odds)
+      const chance = setbackChance(sk, act, ss.lv) * craftFactor(skillId, 'setback');
       if (chance > 0 && Math.random() * 100 < chance) {
         const sbDur = setbackDur(act);
         S.setback = { on: true, remaining: sbDur, total: sbDur };
-        startParadoxMinigame();
       }
 
+      // Spend a charge from any charge-based boon that applied to this activity
+      consumeCraftCharges(skillId);
+
       // Re-queue the activity; consumption skills must afford the next cycle
-      if (tryPayCost(sk, act)) {
-        S.running = { skillId, idx, progress: 0, dur: effDur(act.dur, ss.lv) };
+      if (tryPayCost(skillId, sk, act)) {
+        S.running = { skillId, idx, progress: 0, dur: effDur(act.dur, ss.lv, skillId) };
       } else {
         S.running = null;
         haltMsg = `Not enough ${sk.costRes} to continue "${act.name}".`;
@@ -897,7 +958,7 @@ function tick(now) {
 
       renderResources();
       renderSidebar();
-      if (S.tab === skillId || S.tab === 'unlocks' || S.tab === 'upgrades' || S.tab === 'spheres') renderActivities();
+      if (S.tab === skillId || S.tab === 'unlocks' || S.tab === 'upgrades' || S.tab === 'spheres' || S.tab === 'craft') renderActivities();
     }
 
     renderBottomBar();
@@ -924,7 +985,7 @@ function startActivity(skillId, idx) {
 
   const sk  = SKILLS[skillId];
   const act = sk.activities[idx];
-  if (!tryPayCost(sk, act)) {
+  if (!tryPayCost(skillId, sk, act)) {
     S.running = null;
     haltMsg = `Not enough ${sk.costRes} to start "${act.name}".`;
     renderActivities();
@@ -932,9 +993,7 @@ function startActivity(skillId, idx) {
     return;
   }
   haltMsg = '';
-  ritualBonus = 0;
-  ritualUsed  = false;
-  S.running = { skillId, idx, progress: 0, dur: effDur(act.dur, ss.lv) };
+  S.running = { skillId, idx, progress: 0, dur: effDur(act.dur, ss.lv, skillId) };
 
   renderResources();
   renderActivities();
@@ -968,6 +1027,10 @@ function renderSidebar() {
     (S.unlocked.spheres ? `<div class="skill-tab${S.tab === 'spheres' ? ' active' : ''}" onclick="selectTab('spheres')">
       Spheres
       <div class="skill-lv">${expAvail()} EXP</div>
+    </div>` : '') +
+    (S.unlocked.craft ? `<div class="skill-tab${S.tab === 'craft' ? ' active' : ''}" onclick="selectTab('craft')">
+      Craft
+      <div class="skill-lv">${S.craftActive.length} active</div>
     </div>` : '') +
     `<div class="skill-tab${S.tab === 'upgrades' ? ' active' : ''}" onclick="selectTab('upgrades')">
       Upgrades
@@ -1080,10 +1143,76 @@ function renderSpheres() {
   document.getElementById('activity-panel').innerHTML = html;
 }
 
+function renderCraft() {
+  const tierUnlocked = craftTierUnlocked();
+  let html = `
+    <div class="panel-header">
+      <h2>Craft — Quintessence Talismans</h2>
+      <span class="xp-label">${fmt(S.res.quintessence)} Quintessence</span>
+    </div>
+    <div class="unlock-desc" style="margin-bottom:14px">
+      Spend Quintessence to forge talismans that grant temporary boons.
+      Recipes unlock in groups as you advance the <strong>Prime</strong> sphere.
+    </div>
+  `;
+
+  // ── Active boons (so the player always sees what is in effect) ──
+  html += `<div class="upgrade-group">Active Boons</div>`;
+  if (S.craftActive.length === 0) {
+    html += `<div class="unlock-desc" style="margin-bottom:8px">No talismans are currently active.</div>`;
+  } else {
+    for (const a of S.craftActive) {
+      const def = CRAFT_BY_ID[a.id];
+      if (!def) continue;
+      const remain = def.mode === 'charges'
+        ? `${Math.ceil(a.remaining)} / ${def.amount} uses`
+        : `${fmtTime(Math.max(0, a.remaining))} left`;
+      html += `
+        <div class="unlock-item done">
+          <div>
+            <div class="unlock-name">${def.name}</div>
+            <div class="unlock-desc">${def.desc}</div>
+          </div>
+          <div class="unlock-state">${remain}</div>
+        </div>`;
+    }
+  }
+
+  // ── Recipes, grouped by tier ──
+  for (let t = 1; t <= CRAFT_MAX_TIER; t++) {
+    const items = CRAFT_ITEMS.filter(it => it.tier === t);
+    if (!items.length) continue;
+    const tierLocked = tierUnlocked < t;
+    html += `<div class="upgrade-group">Tier ${t}${tierLocked ? ` — Requires Prime ${t}` : ''}</div>`;
+
+    for (const def of items) {
+      const active = S.craftActive.some(a => a.id === def.id);
+      const canBuy = !tierLocked && S.res.quintessence >= def.cost;
+
+      const state = tierLocked
+        ? `Requires Prime ${t}`
+        : `<button class="buy-btn" onclick="craftItem('${def.id}')"${canBuy ? '' : ' disabled'}>
+             ${active ? 'Recraft' : 'Craft'} — ${fmt(def.cost)} Quint</button>`;
+
+      html += `
+        <div class="unlock-item${tierLocked ? ' dimmed' : ''}${active ? ' done' : ''}">
+          <div>
+            <div class="unlock-name">${def.name}</div>
+            <div class="unlock-desc">${def.desc}</div>
+          </div>
+          <div class="unlock-state">${state}</div>
+        </div>`;
+    }
+  }
+
+  document.getElementById('activity-panel').innerHTML = html;
+}
+
 function renderActivities() {
   if (S.tab === 'unlocks')  { renderUnlocks();  return; }
   if (S.tab === 'upgrades') { renderUpgrades(); return; }
   if (S.tab === 'spheres')  { renderSpheres();  return; }
+  if (S.tab === 'craft')    { renderCraft();    return; }
 
   const id = S.tab;
   const sk = SKILLS[id];
@@ -1105,7 +1234,7 @@ function renderActivities() {
     const unlockLv = sk.unlocks[i];
     const locked   = ss.lv < unlockLv;
     const running  = S.running && S.running.skillId === id && S.running.idx === i;
-    const dur      = effDur(act.dur, ss.lv);
+    const dur      = effDur(act.dur, ss.lv, id);
 
     html += `
       <div class="activity-item${locked ? ' locked' : ''}${running ? ' running' : ''}"
@@ -1115,10 +1244,10 @@ function renderActivities() {
           ${locked ? `<div class="activity-unlock-note">Requires level ${unlockLv}</div>` : ''}
         </div>
         <div class="activity-meta">
-          ${sk.costRes && !locked ? `<div class="activity-cost">−${fmt(act.cost)} ${sk.costRes}</div>` : ''}
-          <div class="activity-reward">+${fmt(actReward(sk, act) * payoffMult(id))} ${sk.resource}</div>
+          ${sk.costRes && !locked ? `<div class="activity-cost">−${fmt(actCost(id, act))} ${sk.costRes}</div>` : ''}
+          <div class="activity-reward">+${fmt(actReward(sk, act) * payoffMult(id) * craftFactor(id, 'reward'))} ${sk.resource}</div>
           <div>${fmtTime(dur)}</div>
-          ${sk.risky && !locked ? `<div class="activity-risk">⚠ ${Math.round(setbackChance(sk, act, ss.lv))}% · ${fmtTime(setbackDur(act))} recovery</div>` : ''}
+          ${sk.risky && !locked ? `<div class="activity-risk">⚠ ${Math.round(setbackChance(sk, act, ss.lv) * craftFactor(id, 'setback'))}% · ${fmtTime(setbackDur(act))} recovery</div>` : ''}
         </div>
       </div>`;
   });
@@ -1150,22 +1279,10 @@ function renderBottomBar() {
   const pct  = Math.min(100, (progress / dur) * 100);
   const rem  = Math.max(0, dur - progress);
 
-  let ritualLabel;
-  if (ritual.open)          ritualLabel = '✦ Channeling...';
-  else if (!ritualUsed)     ritualLabel = '✦ Perform Ritual';
-  else if (ritualBonus > 0) ritualLabel = `✦ +${Math.round(ritualBonus * 100)}% queued`;
-  else                      ritualLabel = '✦ Ritual Missed';
-  const ritualDisabled = ritual.open || ritualUsed;
-
   bar.className = 'bottom-bar';
   bar.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-      <div>
-        <div class="bar-sublabel">Currently performing</div>
-        <div class="bar-name">${act.name}<span class="bar-timer">${fmtTime(rem)}</span></div>
-      </div>
-      <button class="ritual-btn" onclick="openRitual()"${ritualDisabled ? ' disabled' : ''}>${ritualLabel}</button>
-    </div>
+    <div class="bar-sublabel">Currently performing</div>
+    <div class="bar-name">${act.name}<span class="bar-timer">${fmtTime(rem)}</span></div>
     <div class="prog-wrap"><div class="prog-fill" style="width:${pct}%"></div></div>`;
 }
 
@@ -1186,6 +1303,7 @@ function serializeSave() {
     unlocked: S.unlocked,
     upgrades: S.upgrades,
     spheres: S.spheres,
+    craftActive: S.craftActive,
     tab: S.tab,
     running: S.running,
     setback: S.setback,
@@ -1236,6 +1354,15 @@ function applySave(d) {
       }
     }
   }
+  S.craftActive = [];
+  if (Array.isArray(d.craftActive)) {
+    for (const a of d.craftActive) {
+      const def = a && CRAFT_BY_ID[a.id];
+      if (def && typeof a.remaining === 'number' && isFinite(a.remaining) && a.remaining > 0) {
+        S.craftActive.push({ id: a.id, remaining: clamp(a.remaining, 0, def.amount) });
+      }
+    }
+  }
   if (d.skills) {
     for (const id of SKILL_IDS) {
       const sv = d.skills[id];
@@ -1246,13 +1373,14 @@ function applySave(d) {
   }
   if (d.tab === 'unlocks' || d.tab === 'upgrades' ||
       (d.tab === 'spheres' && S.unlocked.spheres) ||
+      (d.tab === 'craft' && S.unlocked.craft) ||
       (SKILL_IDS.includes(d.tab) && isSkillUnlocked(d.tab))) S.tab = d.tab;
 
   S.running = null;
   if (d.running && SKILLS[d.running.skillId] &&
       SKILLS[d.running.skillId].activities[d.running.idx]) {
     const { skillId, idx } = d.running;
-    const dur = effDur(SKILLS[skillId].activities[idx].dur, S.skills[skillId].lv);
+    const dur = effDur(SKILLS[skillId].activities[idx].dur, S.skills[skillId].lv, skillId);
     S.running = {
       skillId, idx, dur,
       progress: clamp(typeof d.running.progress === 'number' ? d.running.progress : 0, 0, dur),
