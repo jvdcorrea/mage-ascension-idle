@@ -3,17 +3,26 @@
 const fs = require('fs');
 const path = require('path');
 
-const html = fs.readFileSync(path.join(__dirname, 'mage-idle.html'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
 const script = html.match(/<script>([\s\S]*)<\/script>/)[1];
 
 // --- DOM / browser stubs ---
 const elements = {};
 function el(id) {
-  if (!elements[id]) elements[id] = { innerHTML: '', textContent: '', className: '', classList: { add(){}, remove(){} } };
+  if (!elements[id]) elements[id] = { innerHTML: '', textContent: '', className: '', classList: { add(){}, remove(){} }, hidden: true, setAttribute() {} };
   return elements[id];
 }
-global.document = { getElementById: el };
-global.window = { addEventListener() {} };
+global.document = {
+  getElementById: el,
+  body: { dataset: {}, classList: { toggle() {} } },
+  addEventListener() {},
+};
+global.window = {
+  innerWidth: 1280,
+  innerHeight: 800,
+  addEventListener() {},
+  matchMedia: () => ({ matches: false, addEventListener() {} }),
+};
 global.requestAnimationFrame = () => {};
 global.performance = { now: () => 0 };
 global.localStorage = { _s: {}, getItem(k){ return this._s[k] ?? null; }, setItem(k,v){ this._s[k]=v; }, removeItem(k){ delete this._s[k]; } };
@@ -22,7 +31,7 @@ global.prompt = () => null;
 global.alert = () => {};
 global.confirm = () => false;
 
-eval(script + '\n;globalThis.S = S;');
+eval(script + '\n;globalThis.S = S; globalThis.Device = Device;');
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -160,6 +169,10 @@ check('save restores sphere levels', S.spheres.forces === 5);
 applySave({ spheres: { forces: 99, bogus: 3 } });
 check('sphere levels clamp to max', S.spheres.forces === 5);
 check('unknown sphere ids dropped', !('bogus' in S.spheres));
+
+// Device module picks up viewport size from stubs
+check('device detects desktop width', Device.isDesktop);
+check('device body dataset set', document.body.dataset.device === 'desktop');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
