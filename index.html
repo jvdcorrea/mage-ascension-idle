@@ -570,6 +570,8 @@ const UNLOCKS = [
     cond: () => totalLevel() >= 30, progress: () => `${totalLevel()} / 30 total level` },
   { id: 'craft', name: 'Craft', desc: 'Channel Quintessence into talismans that grant temporary boons. Deepens with the Prime sphere.',
     cond: () => S.spheres.prime >= 1, progress: () => `Prime ${S.spheres.prime} / 1` },
+  { id: 'teach', name: 'Teach', desc: 'Spend Renown to recruit apprentices who gather resources for you.',
+    res: 'renown', amount: 50 },
 ];
 
 function isSkillUnlocked(id) { return !(id in S.unlocked) || S.unlocked[id]; }
@@ -685,7 +687,7 @@ const SPHERES = [
 ];
 const SPHERE_MAX = 5;
 
-function totalLevel() { return SKILL_IDS.reduce((sum, id) => sum + S.skills[id].lv, 0); }
+function totalLevel() { return SKILL_IDS.reduce((sum, id) => sum + S.skills[id].lv, 0) + S.teach.lv; }
 
 // Cost of the next level: first costs 5, then 5 × current level (5, 5, 10, 15, 20).
 function sphereCost(lv) { return lv === 0 ? 5 : 5 * lv; }
@@ -824,17 +826,254 @@ function craftItem(id) {
   const def = CRAFT_BY_ID[id];
   if (!def) return;
   if (craftTierUnlocked() < def.tier) return;
+  if (S.craftActive.some(a => a.id === id)) return;   // already active — wait for it to expire
   if (S.res.quintessence < def.cost) return;
 
   S.res.quintessence -= def.cost;
-  const existing = S.craftActive.find(a => a.id === id);
-  if (existing) existing.remaining = def.amount;   // recrafting refreshes it
-  else S.craftActive.push({ id, remaining: def.amount });
+  S.craftActive.push({ id, remaining: def.amount });
 
   flashSaveStatus('Crafted: ' + def.name);
   renderResources();
   renderSidebar();
   renderActivities();
+}
+
+// ─────────────────────────────────────────────
+// TEACH
+// ─────────────────────────────────────────────
+// Unlike the other skills, Teach is not an activity ladder. The mage
+// spends Renown to recruit apprentices, who then gather resources
+// passively, in parallel with whatever the player is doing.
+//
+// An apprentice is assigned a single skill type and performs a generic
+// version of it: half the speed a player of the same level would have,
+// with a reward derived purely from the apprentice's own level.
+//   reward = APPR_BASE_REWARD × (1 + level × APPR_K)
+//   dur    = APPR_BASE_DUR / speed(level) × 2   (half speed)
+// Cost skills (Fight/Barter) pay their cost from the player's pool;
+// risky skills (Steal/Investigate/Explore) can backfire into a setback
+// that locks only that apprentice. Apprentices need double the XP per
+// level and cap at APPR_MAX_LEVEL.
+const APPR_BASE_DUR    = 5;     // base duration of the generic activity
+const APPR_BASE_REWARD = 1.0;   // base of the reward formula
+const APPR_K           = 0.2;   // reward growth per apprentice level
+const APPR_MAX_LEVEL   = 50;    // default cap (upgrades may raise later)
+const APPR_RISK        = 1.0;   // representative risk for apprentice setbacks
+const RECRUIT_BASE     = 120;   // s; base recruiting time
+const RECRUIT_TIME_DIV = 200;   // more Renown → shorter recruit
+const RECRUIT_MIN      = 10;    // s; floor on recruit time
+const RECRUIT_LV_SCALE = 0.7;   // Renown → starting level (× √renown)
+// Skills an apprentice can be assigned to (Teach/Craft excluded).
+const ASSIGNABLE = ['study','prepare','venture','network','steal','investigate','explore','fight','barter'];
+
+// Didactics: activities the player performs to train Teach directly. They
+// grant Teach XP (their "reward") and unlock as Teach itself levels up.
+// Duration grows per tier; XP scales slightly above duration so higher
+// tiers are marginally more efficient.
+const TEACH_ACTIVITIES = [
+  { name: 'How to teach magic for dummies', dur: 5,   xp: 3,   unlockLv: 0  },
+  { name: 'Study Advanced Didactics',       dur: 20,  xp: 16,  unlockLv: 20 },
+  { name: 'Study Expert Didactics',         dur: 60,  xp: 60,  unlockLv: 50 },
+  { name: 'Master being a Master',          dur: 150, xp: 200, unlockLv: 80 },
+];
+// Each apprentice completion also teaches the mage a fraction of the XP
+// the apprentice earned for itself.
+const APPR_TEACH_XP_FRACTION = 0.1;
+
+// Real duration of a Didactics activity, sped up by the Teach level.
+function teachActDur(act) { return act.dur / speed(S.teach.lv); }
+
+// Teach uses its own, gentler XP curve than the other skills (which grow
+// at 1.2×/level). Slots and Didactics tiers gate on Teach level, so a
+// softer curve keeps that progression reachable within a run.
+const TEACH_XP_BASE   = 25;
+const TEACH_XP_GROWTH = 1.07;
+function xpToNextTeach(lv) { return Math.floor(TEACH_XP_BASE * Math.pow(TEACH_XP_GROWTH, lv)); }
+function xpForTeachLevel(lv) {
+  let total = 0;
+  for (let i = 0; i < lv; i++) total += Math.floor(TEACH_XP_BASE * Math.pow(TEACH_XP_GROWTH, i));
+  return total;
+}
+
+// Add Teach XP and apply any resulting level-ups (Teach counts toward
+// Total Level, so a level-up may trip an unlock such as Spheres).
+function gainTeachXp(amt) {
+  S.teach.xp += amt;
+  const before = S.teach.lv;
+  while (S.teach.xp >= xpForTeachLevel(S.teach.lv + 1)) S.teach.lv++;
+  if (S.teach.lv !== before) checkUnlocks();
+}
+
+// Slots grow with the Teach level; hook left for future upgrades.
+function maxApprentices() { return 1 + Math.floor(S.teach.lv / 10); }
+
+// Apprentices need twice the XP a player skill would need for the level.
+function xpForApprenticeLevel(lv) { return 2 * xpForLevel(lv); }
+
+// Cost paid per completion for a cost-based skill, derived from that
+// skill's first activity ratio so it tracks the player economy.
+function apprenticeCostRatio(sk) {
+  const a0 = sk.activities[0];
+  return sk.costRes ? a0.cost / a0.reward : 0;
+}
+function apprenticeReward(level) { return APPR_BASE_REWARD * (1 + level * APPR_K); }
+function apprenticeDur(level)    { return APPR_BASE_DUR / speed(level) * 2; }
+
+// What a given Renown investment buys (central values; recruiting adds
+// a small random spread to the level).
+function recruitPreview(renown) {
+  renown = Math.max(0, Math.floor(renown));
+  const level = clamp(Math.round(RECRUIT_LV_SCALE * Math.sqrt(renown)), 1, APPR_MAX_LEVEL);
+  const dur   = Math.max(RECRUIT_MIN, RECRUIT_BASE / (1 + renown / RECRUIT_TIME_DIV));
+  return { level, dur };
+}
+
+function startRecruit(renown) {
+  renown = Math.floor(renown);
+  if (!isFinite(renown) || renown < 1) return;
+  if (S.teach.recruiting) return;
+  if (S.teach.apprentices.length >= maxApprentices()) return;
+  if (S.res.renown < renown) return;
+
+  S.res.renown -= renown;
+  const { level, dur } = recruitPreview(renown);
+  // Roll the actual starting level with ±15% spread.
+  const rolled = clamp(Math.round(level * (0.85 + 0.30 * Math.random())), 1, APPR_MAX_LEVEL);
+  S.teach.recruiting = { renown, level: rolled, progress: 0, dur };
+
+  flashSaveStatus('Recruiting an apprentice…');
+  renderResources();
+  renderSidebar();
+  renderActivities();
+}
+
+function assignApprentice(id, skillId) {
+  const a = S.teach.apprentices.find(x => x.id === id);
+  if (!a) return;
+  if (skillId && (!ASSIGNABLE.includes(skillId) || !isSkillUnlocked(skillId))) return;
+  a.assign = skillId || null;
+  a.progress = 0;
+  a.stalled = false;
+  renderActivities();
+}
+
+function dismissApprentice(id) {
+  const i = S.teach.apprentices.findIndex(x => x.id === id);
+  if (i < 0) return;
+  S.teach.apprentices.splice(i, 1);
+  renderSidebar();
+  renderActivities();
+}
+
+// Advance recruiting and every apprentice. Returns true only on a
+// *structural* change (apprentice created/levelled, resource gained,
+// setback started/ended) — i.e. something that alters the panel beyond a
+// live countdown. Per-frame progress (recruit bar, setback timer) is left
+// for refreshTeachLive() so the panel isn't rebuilt every frame, which
+// would replace its buttons mid-click. Runs in parallel with the player.
+function updateTeach(dt) {
+  let structural = false;
+
+  // ── Recruiting in progress ──
+  const r = S.teach.recruiting;
+  if (r) {
+    r.progress += dt;
+    if (r.progress >= r.dur) {
+      S.teach.apprentices.push({
+        id: S.teach.nextId++,
+        level: r.level,
+        xp: xpForApprenticeLevel(r.level),
+        assign: null,
+        progress: 0,
+        dur: 0,
+        setback: { on: false, remaining: 0, total: 0 },
+      });
+      // Recruiting trains the mage too.
+      gainTeachXp(5 + r.level);
+      S.teach.recruiting = null;
+      flashSaveStatus('Apprentice recruited!');
+      structural = true;
+    }
+    // else: only the live progress bar advanced (handled by refreshTeachLive)
+  }
+
+  // ── Active apprentices ──
+  for (const a of S.teach.apprentices) {
+    if (a.setback.on) {
+      a.setback.remaining = Math.max(0, a.setback.remaining - dt);
+      if (a.setback.remaining <= 0) { a.setback.on = false; structural = true; } // status changes
+      continue; // while recovering, only the countdown ticks
+    }
+    if (!a.assign) continue;
+
+    const sk  = SKILLS[a.assign];
+    const dur = apprenticeDur(a.level);
+    a.dur = dur;
+    a.progress += dt;
+
+    if (a.progress >= dur) {
+      const reward = apprenticeReward(a.level);
+
+      // Cost skills draw from the player's pool; pause if unaffordable.
+      if (sk.costRes) {
+        const cost = reward * apprenticeCostRatio(sk);
+        if (S.res[sk.costRes] < cost) {
+          a.progress = dur;
+          // Surface the stall once (on transition) so the roster can explain it.
+          if (!a.stalled) { a.stalled = true; structural = true; }
+          continue;
+        }
+        S.res[sk.costRes] -= cost;
+      }
+      a.stalled = false;
+
+      gainRes(sk.resource, reward);
+      // The apprentice's practice also teaches the mage a little.
+      gainTeachXp(APPR_BASE_DUR * APPR_TEACH_XP_FRACTION);
+
+      a.xp += APPR_BASE_DUR;
+      while (a.level < APPR_MAX_LEVEL && a.xp >= xpForApprenticeLevel(a.level + 1)) a.level++;
+
+      // Risky skills may backfire — locks only this apprentice.
+      if (sk.risky) {
+        const chance = setbackChance(sk, { risk: APPR_RISK }, a.level);
+        if (chance > 0 && Math.random() * 100 < chance) {
+          const sbDur = setbackDur({ risk: APPR_RISK, dur: APPR_BASE_DUR });
+          a.setback = { on: true, remaining: sbDur, total: sbDur };
+        }
+      }
+
+      a.progress = 0;
+      structural = true;
+    }
+  }
+
+  return structural;
+}
+
+// Update only the live countdowns/bars on the Teach panel (recruit
+// progress, apprentice setback timers) without rebuilding it.
+function refreshTeachLive() {
+  const r = S.teach.recruiting;
+  if (r) {
+    const fill  = document.getElementById('recruit-fill');
+    const timer = document.getElementById('recruit-timer');
+    if (fill)  fill.style.width = clamp((r.progress / r.dur) * 100, 0, 100) + '%';
+    if (timer) timer.textContent = fmtTime(Math.max(0, r.dur - r.progress));
+  }
+  for (const a of S.teach.apprentices) {
+    if (a.setback.on) {
+      const node = document.getElementById('appr-status-' + a.id);
+      if (node) node.textContent = `⚠ recovering · ${fmtTime(a.setback.remaining)}`;
+      continue;
+    }
+    // Animate the activity-cycle bar of a working apprentice (skip when
+    // stalled, so it stays full-and-frozen to signal the pause).
+    if (a.assign && !a.stalled && a.dur > 0) {
+      const bar = document.getElementById('appr-prog-' + a.id);
+      if (bar) bar.style.width = clamp((a.progress / a.dur) * 100, 0, 100) + '%';
+    }
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -898,10 +1137,12 @@ const S = {
     fight:       { lv: 0, xp: 0 },
     barter:      { lv: 0, xp: 0 },
   },
-  unlocked: { fight: false, barter: false, spheres: false, craft: false },
+  unlocked: { fight: false, barter: false, spheres: false, craft: false, teach: false },
   upgrades: {},   // purchased upgrade ids → true
   spheres: Object.fromEntries(SPHERES.map(sp => [sp.id, 0])),
   craftActive: [], // active crafted boons → [{ id, remaining }] (remaining = charges or seconds)
+  // Teach: own level/xp, recruited apprentices, and any recruit in progress.
+  teach: { lv: 0, xp: 0, nextId: 1, apprentices: [], recruiting: null },
   tab:     'study',
   running: null,   // { skillId, idx, progress, dur }
   setback: { on: false, remaining: 0, total: 0 },
@@ -922,7 +1163,24 @@ function tick(now) {
   // Crafted time-based boons count down in real time, even during a setback.
   const craftRemoved = updateCraftTimers(dt);
   if (craftRemoved) renderSidebar();
-  if (S.tab === 'craft' && (craftRemoved || hasActiveCraftTimer())) renderActivities();
+  if (S.tab === 'craft') {
+    // Only a full rebuild when a boon expired (buttons change); otherwise
+    // just tick the countdown text so the recipe buttons stay clickable.
+    if (craftRemoved) renderActivities();
+    else if (hasActiveCraftTimer()) refreshCraftTimers();
+  }
+
+  // Apprentices (and any recruit) work in parallel — even during a player setback.
+  const teachStructural = updateTeach(dt);
+  if (teachStructural) {
+    renderResources();
+    renderSidebar();
+    if (S.tab === 'teach') renderActivities();
+  } else if (S.tab === 'teach') {
+    // No structural change — just tick the live bars/timers in place, so
+    // the panel's buttons and selects stay clickable.
+    refreshTeachLive();
+  }
 
   if (S.setback.on) {
     S.setback.remaining = Math.max(0, S.setback.remaining - dt);
@@ -932,7 +1190,31 @@ function tick(now) {
     return;
   }
 
-  if (S.running) {
+  // While training an apprentice the mage is occupied — the player's own
+  // activity is paused and cannot progress until recruiting finishes.
+  if (S.teach.recruiting) {
+    renderBottomBar();
+    requestAnimationFrame(tick);
+    return;
+  }
+
+  if (S.running && S.running.teach) {
+    // Didactics: a player activity that yields Teach XP instead of a resource.
+    const act = TEACH_ACTIVITIES[S.running.idx];
+    const dur = teachActDur(act);
+    S.running.progress += dt;
+    S.running.dur = dur;
+
+    if (S.running.progress >= dur) {
+      gainTeachXp(act.xp);
+      S.running = { teach: true, idx: S.running.idx, progress: 0, dur: teachActDur(act) };
+      renderResources();
+      renderSidebar();
+      if (S.tab === 'teach') renderActivities();
+    }
+
+    renderBottomBar();
+  } else if (S.running) {
     const { skillId, idx } = S.running;
     const sk   = SKILLS[skillId];
     const ss   = S.skills[skillId];
@@ -995,6 +1277,7 @@ function selectTab(skillId) {
 
 function startActivity(skillId, idx) {
   if (S.setback.on) return;
+  if (S.teach.recruiting) return;   // busy training — the bottom bar explains it
   const ss = S.skills[skillId];
   if (ss.lv < SKILLS[skillId].unlocks[idx]) return;
 
@@ -1011,6 +1294,21 @@ function startActivity(skillId, idx) {
   S.running = { skillId, idx, progress: 0, dur: effDur(act.dur, ss.lv, skillId) };
 
   renderResources();
+  renderSidebar();
+  renderActivities();
+  renderBottomBar();
+}
+
+// Start a Didactics activity (player-performed, yields Teach XP).
+function startTeachActivity(idx) {
+  if (S.setback.on) return;
+  if (S.teach.recruiting) return;   // busy training an apprentice
+  const act = TEACH_ACTIVITIES[idx];
+  if (!act || S.teach.lv < act.unlockLv) return;
+
+  haltMsg = '';
+  S.running = { teach: true, idx, progress: 0, dur: teachActDur(act) };
+
   renderSidebar();
   renderActivities();
   renderBottomBar();
@@ -1048,6 +1346,10 @@ function renderSidebar() {
     (S.unlocked.craft ? `<div class="skill-tab${S.tab === 'craft' ? ' active' : ''}" onclick="selectTab('craft')">
       Craft
       <div class="skill-lv">${S.craftActive.length} active</div>
+    </div>` : '') +
+    (S.unlocked.teach ? `<div class="skill-tab${S.tab === 'teach' ? ' active' : ''}" onclick="selectTab('teach')">
+      Teach${S.running && S.running.teach ? ' <span class="active-mark" title="Activity in progress">⛤</span>' : ''}
+      <div class="skill-lv">Lv ${S.teach.lv} · ${S.teach.apprentices.length}/${maxApprentices()} appr.</div>
     </div>` : '') +
     `<div class="skill-tab${S.tab === 'upgrades' ? ' active' : ''}" onclick="selectTab('upgrades')">
       Upgrades
@@ -1190,7 +1492,7 @@ function renderCraft() {
             <div class="unlock-name">${def.name}</div>
             <div class="unlock-desc">${def.desc}</div>
           </div>
-          <div class="unlock-state">${remain}</div>
+          <div class="unlock-state"${def.mode === 'time' ? ` id="craft-remain-${a.id}"` : ''}>${remain}</div>
         </div>`;
     }
   }
@@ -1204,12 +1506,15 @@ function renderCraft() {
 
     for (const def of items) {
       const active = S.craftActive.some(a => a.id === def.id);
-      const canBuy = !tierLocked && S.res.quintessence >= def.cost;
+      // An already-active talisman can't be crafted again until it expires,
+      // so its button is disabled (and labelled) to make that clear.
+      const canBuy = !tierLocked && !active && S.res.quintessence >= def.cost;
+      const label  = active ? 'Active' : `Craft — ${fmt(def.cost)} Quint`;
 
       const state = tierLocked
         ? `Requires Prime ${t}`
         : `<button class="buy-btn" onclick="craftItem('${def.id}')"${canBuy ? '' : ' disabled'}>
-             ${active ? 'Recraft' : 'Craft'} — ${fmt(def.cost)} Quint</button>`;
+             ${label}</button>`;
 
       html += `
         <div class="unlock-item${tierLocked ? ' dimmed' : ''}${active ? ' done' : ''}">
@@ -1225,11 +1530,186 @@ function renderCraft() {
   document.getElementById('activity-panel').innerHTML = html;
 }
 
+// Update only the live countdowns of active time-based boons, without
+// rebuilding the panel — otherwise the per-frame re-render would replace
+// the recipe buttons mid-click and make them unclickable.
+function refreshCraftTimers() {
+  for (const a of S.craftActive) {
+    const def = CRAFT_BY_ID[a.id];
+    if (!def || def.mode !== 'time') continue;
+    const node = document.getElementById('craft-remain-' + a.id);
+    if (node) node.textContent = `${fmtTime(Math.max(0, a.remaining))} left`;
+  }
+}
+
+// Desired Renown investment for the next recruit (UI-only, not saved).
+let recruitAmount = 50;
+function canRecruit(amt) {
+  return !S.teach.recruiting
+    && S.teach.apprentices.length < maxApprentices()
+    && amt >= 1 && S.res.renown >= amt;
+}
+function recruitPreviewText() {
+  if (recruitAmount < 1) return 'Enter a Renown amount to invest.';
+  const p = recruitPreview(recruitAmount);
+  return `≈ level ${p.level} apprentice · ${fmtTime(p.dur)} to train`;
+}
+function setRecruitAmount(v) {
+  recruitAmount = Math.max(0, Math.floor(Number(v) || 0));
+  const prev = document.getElementById('recruit-preview');
+  if (prev) prev.textContent = recruitPreviewText();
+  const btn = document.getElementById('recruit-btn');
+  if (btn) btn.disabled = !canRecruit(recruitAmount);
+}
+function setRecruitPreset(v) { recruitAmount = Math.floor(v); renderActivities(); }
+function recruitFromInput() { startRecruit(recruitAmount); }
+
+function renderTeach() {
+  const used = S.teach.apprentices.length;
+  const max  = maxApprentices();
+  const slotFree = used < max && !S.teach.recruiting;
+
+  const cumXp  = S.teach.xp - xpForTeachLevel(S.teach.lv);
+  const needed = xpToNextTeach(S.teach.lv);
+  const xpPct  = Math.min(100, (cumXp / needed) * 100);
+
+  let html = `
+    <div class="panel-header">
+      <h2>Teach — Level ${S.teach.lv}</h2>
+      <span class="xp-label">${Math.floor(cumXp)} / ${needed} XP · ${fmt(S.res.renown)} Renown</span>
+    </div>
+    <div class="xp-bar-wrap"><div class="xp-bar" style="width:${xpPct}%"></div></div>
+  `;
+
+  // ── Didactics: player activities that train Teach directly ──
+  html += `<div class="upgrade-group">Didactics — train your Teach skill</div>`;
+  TEACH_ACTIVITIES.forEach((act, i) => {
+    const locked  = S.teach.lv < act.unlockLv;
+    const running = S.running && S.running.teach && S.running.idx === i;
+    const dur     = teachActDur(act);
+    html += `
+      <div class="activity-item${locked ? ' locked' : ''}${running ? ' running' : ''}"
+           onclick="startTeachActivity(${i})">
+        <div>
+          <div class="activity-name">${act.name}</div>
+          ${locked ? `<div class="activity-unlock-note">Requires Teach level ${act.unlockLv}</div>` : ''}
+        </div>
+        <div class="activity-meta">
+          <div class="activity-reward">+${fmt(act.xp)} Teach XP</div>
+          <div>${fmtTime(dur)}</div>
+        </div>
+      </div>`;
+  });
+
+  // ── Apprentices intro ──
+  html += `<div class="upgrade-group">Apprentices</div>`;
+  html += `
+    <div class="unlock-desc" style="margin-bottom:10px">
+      Spend Renown to recruit apprentices. They gather resources for you passively,
+      in parallel with your own activity, and each completion also teaches you a little.
+      More Renown invested means a faster, higher-level recruit.
+      Slots: <strong>${used} / ${max}</strong> (grows with your Teach level).
+    </div>
+  `;
+
+  // ── Recruiting panel ──
+  html += `<div class="upgrade-group">Recruit</div>`;
+  if (S.teach.recruiting) {
+    const r   = S.teach.recruiting;
+    const pct = clamp((r.progress / r.dur) * 100, 0, 100);
+    const rem = Math.max(0, r.dur - r.progress);
+    html += `
+      <div class="unlock-item">
+        <div style="flex:1">
+          <div class="unlock-name">Training a level ${r.level} apprentice…</div>
+          <div class="prog-wrap" style="margin-top:6px"><div class="prog-fill" id="recruit-fill" style="width:${pct}%"></div></div>
+        </div>
+        <div class="unlock-state" id="recruit-timer">${fmtTime(rem)}</div>
+      </div>`;
+  } else if (!slotFree) {
+    html += `<div class="unlock-desc" style="margin-bottom:8px">All apprentice slots are full. Raise your Teach level for more.</div>`;
+  } else {
+    const presets = [50, 250, 1000];
+    html += `
+      <div class="unlock-item">
+        <div style="flex:1">
+          <div class="unlock-name">
+            Invest
+            <input type="number" min="1" step="10" value="${recruitAmount}"
+                   oninput="setRecruitAmount(this.value)"
+                   style="width:90px;margin:0 6px"> Renown
+          </div>
+          <div class="unlock-desc" id="recruit-preview">${recruitPreviewText()}</div>
+          <div style="margin-top:6px">
+            ${presets.map(p => `<button class="buy-btn" onclick="setRecruitPreset(${p})" style="margin-right:6px">${p}</button>`).join('')}
+            <button class="buy-btn" onclick="setRecruitPreset(${Math.floor(S.res.renown)})" style="margin-right:6px">Max</button>
+          </div>
+        </div>
+        <div class="unlock-state">
+          <button class="buy-btn" id="recruit-btn" onclick="recruitFromInput()"${canRecruit(recruitAmount) ? '' : ' disabled'}>Recruit</button>
+        </div>
+      </div>`;
+  }
+
+  // ── Apprentice roster ──
+  html += `<div class="upgrade-group">Active roster</div>`;
+  if (used === 0) {
+    html += `<div class="unlock-desc">No apprentices yet. Recruit one above.</div>`;
+  } else {
+    for (const a of S.teach.apprentices) {
+      const cumXp  = a.xp - xpForApprenticeLevel(a.level);
+      const needed = xpForApprenticeLevel(a.level + 1) - xpForApprenticeLevel(a.level);
+      const xpPct  = a.level >= APPR_MAX_LEVEL ? 100 : clamp((cumXp / needed) * 100, 0, 100);
+      const xpText = a.level >= APPR_MAX_LEVEL ? 'max level' : `${Math.floor(xpPct)}% to next`;
+      // Activity-cycle progress — the live "is it working?" indicator.
+      const cyclePct = (a.assign && a.dur > 0) ? clamp((a.progress / a.dur) * 100, 0, 100) : 0;
+
+      const options = `<option value="">— idle —</option>` +
+        ASSIGNABLE.filter(isSkillUnlocked).map(id =>
+          `<option value="${id}"${a.assign === id ? ' selected' : ''}>${SKILLS[id].name}</option>`).join('');
+
+      let status;
+      if (a.setback.on) {
+        status = `<span class="activity-risk" id="appr-status-${a.id}">⚠ recovering · ${fmtTime(a.setback.remaining)}</span>`;
+      } else if (a.stalled && a.assign) {
+        const sk   = SKILLS[a.assign];
+        const cost = apprenticeReward(a.level) * apprenticeCostRatio(sk);
+        status = `<span class="activity-risk">⏸ paused — needs ${fmt(cost)} ${sk.costRes} per cycle</span>`;
+      } else if (a.assign) {
+        const sk   = SKILLS[a.assign];
+        const rate = apprenticeReward(a.level) / apprenticeDur(a.level);
+        status = `+${fmt(rate)} ${sk.resource}/s`;
+      } else {
+        status = 'idle';
+      }
+
+      html += `
+        <div class="unlock-item${a.setback.on || a.stalled ? ' dimmed' : ''}">
+          <div style="flex:1">
+            <div class="unlock-name">Apprentice — Lv ${a.level} <span class="unlock-desc">(${xpText})</span></div>
+            <div class="prog-wrap" style="margin:6px 0"><div class="prog-fill" id="appr-prog-${a.id}" style="width:${cyclePct}%"></div></div>
+            <div class="unlock-desc">
+              Assignment:
+              <select onchange="assignApprentice(${a.id}, this.value)" style="margin-left:4px">${options}</select>
+              · ${status}
+            </div>
+          </div>
+          <div class="unlock-state">
+            <button class="buy-btn" onclick="dismissApprentice(${a.id})">Dismiss</button>
+          </div>
+        </div>`;
+    }
+  }
+
+  document.getElementById('activity-panel').innerHTML = html;
+}
+
 function renderActivities() {
   if (S.tab === 'unlocks')  { renderUnlocks();  return; }
   if (S.tab === 'upgrades') { renderUpgrades(); return; }
   if (S.tab === 'spheres')  { renderSpheres();  return; }
   if (S.tab === 'craft')    { renderCraft();    return; }
+  if (S.tab === 'teach')    { renderTeach();    return; }
 
   const id = S.tab;
   const sk = SKILLS[id];
@@ -1285,14 +1765,26 @@ function renderBottomBar() {
     return;
   }
 
+  if (S.teach.recruiting) {
+    const r   = S.teach.recruiting;
+    const pct = Math.min(100, (r.progress / r.dur) * 100);
+    const rem = Math.max(0, r.dur - r.progress);
+    bar.className = 'bottom-bar';
+    bar.innerHTML = `
+      <div class="bar-sublabel">Training an apprentice — you cannot perform activities</div>
+      <div class="bar-name">Recruiting a level ${r.level} apprentice<span class="bar-timer">${fmtTime(rem)}</span></div>
+      <div class="prog-wrap"><div class="prog-fill" style="width:${pct}%"></div></div>`;
+    return;
+  }
+
   if (!S.running) {
     bar.className = 'bottom-bar';
     bar.innerHTML = `<span class="idle-msg">${haltMsg || 'Select an activity to begin.'}</span>`;
     return;
   }
 
-  const { skillId, idx, progress, dur } = S.running;
-  const act  = SKILLS[skillId].activities[idx];
+  const { idx, progress, dur } = S.running;
+  const act  = S.running.teach ? TEACH_ACTIVITIES[idx] : SKILLS[S.running.skillId].activities[idx];
   const pct  = Math.min(100, (progress / dur) * 100);
   const rem  = Math.max(0, dur - progress);
 
@@ -1321,6 +1813,7 @@ function serializeSave() {
     upgrades: S.upgrades,
     spheres: S.spheres,
     craftActive: S.craftActive,
+    teach: S.teach,
     tab: S.tab,
     running: S.running,
     setback: S.setback,
@@ -1380,6 +1873,45 @@ function applySave(d) {
       }
     }
   }
+  // Teach: level/xp, apprentices and any recruit in progress.
+  S.teach = { lv: 0, xp: 0, nextId: 1, apprentices: [], recruiting: null };
+  if (d.teach && typeof d.teach === 'object') {
+    const t = d.teach;
+    if (typeof t.lv === 'number' && isFinite(t.lv)) S.teach.lv = Math.max(0, Math.floor(t.lv));
+    if (typeof t.xp === 'number' && isFinite(t.xp)) S.teach.xp = Math.max(0, t.xp);
+    if (Array.isArray(t.apprentices)) {
+      for (const a of t.apprentices) {
+        if (!a || typeof a !== 'object') continue;
+        const level = clamp(Math.floor(a.level), 1, APPR_MAX_LEVEL);
+        const assign = (a.assign && ASSIGNABLE.includes(a.assign)) ? a.assign : null;
+        const sb = a.setback || {};
+        const sbTotal = (typeof sb.total === 'number' && isFinite(sb.total) && sb.total > 0) ? sb.total : 0;
+        const sbRem   = (typeof sb.remaining === 'number' && isFinite(sb.remaining)) ? clamp(sb.remaining, 0, sbTotal) : 0;
+        S.teach.apprentices.push({
+          id: S.teach.nextId++,
+          level,
+          xp: (typeof a.xp === 'number' && isFinite(a.xp)) ? Math.max(xpForApprenticeLevel(level), a.xp) : xpForApprenticeLevel(level),
+          assign,
+          progress: (typeof a.progress === 'number' && isFinite(a.progress)) ? Math.max(0, a.progress) : 0,
+          dur: 0,
+          setback: { on: sbRem > 0, remaining: sbRem, total: sbTotal },
+        });
+      }
+    }
+    if (t.recruiting && typeof t.recruiting === 'object') {
+      const r = t.recruiting;
+      const lvl = clamp(Math.floor(r.level), 1, APPR_MAX_LEVEL);
+      const dur = (typeof r.dur === 'number' && isFinite(r.dur) && r.dur > 0) ? r.dur : RECRUIT_BASE;
+      if (isFinite(lvl)) {
+        S.teach.recruiting = {
+          renown: (typeof r.renown === 'number' && isFinite(r.renown)) ? Math.max(0, r.renown) : 0,
+          level: lvl,
+          dur,
+          progress: (typeof r.progress === 'number' && isFinite(r.progress)) ? clamp(r.progress, 0, dur) : 0,
+        };
+      }
+    }
+  }
   if (d.skills) {
     for (const id of SKILL_IDS) {
       const sv = d.skills[id];
@@ -1391,10 +1923,18 @@ function applySave(d) {
   if (d.tab === 'unlocks' || d.tab === 'upgrades' ||
       (d.tab === 'spheres' && S.unlocked.spheres) ||
       (d.tab === 'craft' && S.unlocked.craft) ||
+      (d.tab === 'teach' && S.unlocked.teach) ||
       (SKILL_IDS.includes(d.tab) && isSkillUnlocked(d.tab))) S.tab = d.tab;
 
   S.running = null;
-  if (d.running && SKILLS[d.running.skillId] &&
+  if (d.running && d.running.teach && TEACH_ACTIVITIES[d.running.idx]) {
+    const idx = d.running.idx;
+    const dur = teachActDur(TEACH_ACTIVITIES[idx]);
+    S.running = {
+      teach: true, idx, dur,
+      progress: clamp(typeof d.running.progress === 'number' ? d.running.progress : 0, 0, dur),
+    };
+  } else if (d.running && SKILLS[d.running.skillId] &&
       SKILLS[d.running.skillId].activities[d.running.idx]) {
     const { skillId, idx } = d.running;
     const dur = effDur(SKILLS[skillId].activities[idx].dur, S.skills[skillId].lv, skillId);
