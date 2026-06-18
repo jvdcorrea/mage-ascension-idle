@@ -1724,11 +1724,7 @@ function renderSidebar() {
         <div class="skill-lv">Lv ${ss.lv}</div>
       </div>`;
     }).join('') +
-    `<div class="sidebar-divider"></div>` +
-    (S.unlocked.spheres ? `<div class="skill-tab${S.tab === 'spheres' ? ' active' : ''}" onclick="selectTab('spheres')">
-      Spheres
-      <div class="skill-lv">${expAvail()} EXP</div>
-    </div>` : '') +
+    // Craft and Teach are skills too — keep them in the Skills group, under Barter.
     (S.unlocked.craft ? `<div class="skill-tab${S.tab === 'craft' ? ' active' : ''}" onclick="selectTab('craft')">
       Craft
       <div class="skill-lv">${S.craftActive.length} active</div>
@@ -1736,6 +1732,11 @@ function renderSidebar() {
     (S.unlocked.teach ? `<div class="skill-tab${S.tab === 'teach' ? ' active' : ''}" onclick="selectTab('teach')">
       Teach${S.running && S.running.teach ? ' <span class="active-mark" title="Activity in progress">⛤</span>' : ''}
       <div class="skill-lv">Lv ${S.teach.lv} · ${S.teach.apprentices.length}/${maxApprentices()} appr.</div>
+    </div>` : '') +
+    `<div class="sidebar-divider"></div>` +
+    (S.unlocked.spheres ? `<div class="skill-tab${S.tab === 'spheres' ? ' active' : ''}" onclick="selectTab('spheres')">
+      Spheres
+      <div class="skill-lv">${expAvail()} EXP</div>
     </div>` : '') +
     `<div class="skill-tab${S.tab === 'upgrades' ? ' active' : ''}" onclick="selectTab('upgrades')">
       Upgrades
@@ -2015,7 +2016,7 @@ function renderTeach() {
   } else if (!slotFree) {
     html += `<div class="unlock-desc" style="margin-bottom:8px">All apprentice slots are full. Raise your Teach level for more.</div>`;
   } else {
-    const presets = [50, 250, 1000];
+    const presets = [50, 250, 1000, 2500, 5000];
     html += `
       <div class="unlock-item">
         <div style="flex:1">
