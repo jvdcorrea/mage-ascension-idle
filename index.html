@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Mage: The Ascension — Idle</title>
   <style>
     :root {
@@ -16,6 +17,10 @@
       --gold:     #d4a843;
       --danger:   #ef4444;
       --xpbar:    #3b1f6e;
+      --nav-height: 0px;
+      --header-height: 0px;
+      --bottom-bar-height: 72px;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -55,6 +60,12 @@
       text-transform: uppercase;
       letter-spacing: 1px;
     }
+    .resource-label-short {
+      display: none;
+      text-decoration: none;
+    }
+    .total-level-badge { display: none; }
+    .header-actions { display: contents; }
     .resource-value {
       font-size: 1.05rem;
       color: var(--gold);
@@ -94,7 +105,9 @@
       color: var(--subtext);
       font-size: 0.9rem;
     }
-    .skill-tab:hover { background: var(--panel2); color: var(--text); }
+    @media (hover: hover) {
+      .skill-tab:hover { background: var(--panel2); color: var(--text); }
+    }
     .skill-tab.active {
       border-left-color: var(--accent);
       background: var(--panel2);
@@ -163,9 +176,11 @@
       transition: border-color 0.15s, background 0.15s;
       user-select: none;
     }
-    .activity-item:hover:not(.locked):not(.running) {
-      border-color: var(--accent);
-      background: var(--panel2);
+    @media (hover: hover) {
+      .activity-item:hover:not(.locked):not(.running) {
+        border-color: var(--accent);
+        background: var(--panel2);
+      }
     }
     .activity-item.running {
       border-color: var(--magic);
@@ -233,7 +248,9 @@
       white-space: nowrap;
       transition: background 0.15s;
     }
-    .buy-btn:hover:not(:disabled) { background: #2a1f4d; }
+    @media (hover: hover) {
+      .buy-btn:hover:not(:disabled) { background: #2a1f4d; }
+    }
     .buy-btn:disabled {
       border-color: var(--border);
       color: var(--subtext);
@@ -319,8 +336,10 @@
       cursor: pointer;
       transition: border-color 0.15s, color 0.15s;
     }
-    .save-btn:hover { border-color: var(--magic); color: var(--text); }
-    .save-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+    @media (hover: hover) {
+      .save-btn:hover { border-color: var(--magic); color: var(--text); }
+      .save-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+    }
     .save-status {
       font-size: 0.62rem;
       color: var(--magic);
@@ -331,6 +350,251 @@
     }
     .save-status.show { opacity: 1; }
 
+    /* ── Mobile menu & header controls ── */
+    .header-top {
+      display: contents;
+    }
+    .menu-btn {
+      display: none;
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 1.1rem;
+      line-height: 1;
+      min-width: 44px;
+      min-height: 44px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .mobile-menu-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      z-index: 90;
+    }
+    .mobile-menu-backdrop[hidden] {
+      display: none;
+    }
+    .mobile-menu {
+      position: fixed;
+      top: var(--header-height);
+      right: 0;
+      bottom: 0;
+      width: min(280px, 85vw);
+      background: var(--panel);
+      border-left: 1px solid var(--border);
+      z-index: 100;
+      flex-direction: column;
+      padding: 16px;
+      padding-bottom: calc(16px + var(--safe-bottom));
+    }
+    .mobile-menu:not([hidden]) {
+      display: flex;
+    }
+    .mobile-menu[hidden] {
+      display: none !important;
+    }
+    .mobile-menu-header {
+      margin-bottom: 20px;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--subtext);
+    }
+    .mobile-menu-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .mobile-menu-actions .save-btn {
+      font-size: 0.75rem;
+      padding: 12px 14px;
+      min-height: 44px;
+    }
+    .mobile-menu-actions .save-status {
+      opacity: 1;
+      text-align: left;
+      min-width: 0;
+    }
+
+    /* ── Tablet ── */
+    @media (max-width: 1024px) {
+      .skill-sidebar { width: 130px; }
+      header { padding: 10px 16px; }
+    }
+
+    /* ── Mobile ── */
+    @media (max-width: 640px) {
+      :root {
+        --nav-height: 56px;
+      }
+      header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        padding: 8px 12px;
+      }
+      .header-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      header h1 {
+        font-size: 0.85rem;
+        letter-spacing: 2px;
+        flex: 1;
+        min-width: 0;
+      }
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-shrink: 0;
+      }
+      .total-level-badge {
+        display: flex;
+        align-items: baseline;
+        gap: 4px;
+      }
+      .total-level-label {
+        font-size: 0.75rem;
+        color: var(--subtext);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .total-level-badge .resource-value {
+        font-size: 0.95rem;
+        min-width: 0;
+        font-variant-numeric: tabular-nums;
+      }
+      .menu-btn { display: block; }
+      body.menu-open header {
+        position: relative;
+        z-index: 110;
+      }
+      .resource-total-level { display: none; }
+      .resources {
+        display: flex;
+        gap: 6px;
+        overflow: visible;
+      }
+      .resource {
+        flex: 1 1 0;
+        min-width: 0;
+      }
+      .resource-label { display: none; }
+      .resource-label-short {
+        display: block;
+        font-size: 0.75rem;
+        color: var(--subtext);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .resource-value {
+        font-size: 0.8rem;
+        min-width: 0;
+        max-width: 100%;
+        font-variant-numeric: tabular-nums;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .save-controls { display: none; }
+
+      .main {
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        position: relative;
+      }
+      .activity-panel {
+        flex: 1;
+        padding: 12px 16px;
+        padding-bottom: calc(var(--nav-height) + var(--bottom-bar-height) + var(--safe-bottom) + 12px);
+      }
+      .skill-sidebar {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: var(--safe-bottom);
+        width: 100%;
+        height: var(--nav-height);
+        display: flex;
+        flex-direction: row;
+        align-items: stretch;
+        overflow-x: auto;
+        overflow-y: hidden;
+        border-right: none;
+        border-top: 1px solid var(--border);
+        padding: 0;
+        z-index: 20;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      .skill-sidebar::-webkit-scrollbar { display: none; }
+      .sidebar-title,
+      .sidebar-divider { display: none; }
+      .skill-tab {
+        flex: 0 0 auto;
+        min-width: 72px;
+        padding: 8px 10px;
+        border-left: none;
+        border-top: 3px solid transparent;
+        text-align: center;
+        font-size: 0.72rem;
+        touch-action: manipulation;
+      }
+      .skill-tab.active {
+        border-left-color: transparent;
+        border-top-color: var(--accent);
+      }
+      .skill-lv { font-size: 0.58rem; }
+
+      .bottom-bar {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: calc(var(--nav-height) + var(--safe-bottom));
+        z-index: 15;
+        padding: 10px 16px;
+        min-height: var(--bottom-bar-height);
+      }
+
+      .activity-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+        padding: 14px 16px;
+        min-height: 48px;
+        touch-action: manipulation;
+      }
+      .activity-meta {
+        text-align: left;
+        width: 100%;
+      }
+      .unlock-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+      }
+      .unlock-state {
+        margin-left: 0;
+        white-space: normal;
+      }
+      .buy-btn {
+        min-height: 44px;
+        padding: 10px 16px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .active-mark { animation: none; opacity: 1; }
+      .xp-bar, .prog-fill { transition: none; }
+    }
+
     /* ── Scrollbar ── */
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-track { background: var(--bg); }
@@ -340,30 +604,44 @@
 <body>
 
 <header>
-  <h1>Mage: The Ascension</h1>
+  <div class="header-top">
+    <h1>Mage: The Ascension</h1>
+    <div class="header-actions">
+      <div class="total-level-badge" title="Total Level">
+        <span class="total-level-label">Lv</span>
+        <span class="resource-value total-level-value" id="r-total-level-mobile" style="color:var(--magic)">0</span>
+      </div>
+      <button type="button" class="menu-btn" id="menu-btn" onclick="toggleMobileMenu()" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-menu">☰</button>
+    </div>
+  </div>
   <div class="resources">
-    <div class="resource">
+    <div class="resource resource-total-level">
       <span class="resource-label">Total Level</span>
-      <span class="resource-value" id="r-total-level" style="color:var(--magic)">0</span>
+      <span class="resource-value total-level-value" id="r-total-level" style="color:var(--magic)">0</span>
     </div>
     <div class="resource">
       <span class="resource-label">Knowledge</span>
+      <abbr class="resource-label-short" title="Knowledge">Know</abbr>
       <span class="resource-value" id="r-knowledge">0</span>
     </div>
     <div class="resource">
       <span class="resource-label">Money</span>
+      <abbr class="resource-label-short" title="Money">Money</abbr>
       <span class="resource-value" id="r-money">0</span>
     </div>
     <div class="resource">
       <span class="resource-label">Power</span>
+      <abbr class="resource-label-short" title="Power">Power</abbr>
       <span class="resource-value" id="r-power">0</span>
     </div>
     <div class="resource">
       <span class="resource-label">Quintessence</span>
+      <abbr class="resource-label-short" title="Quintessence">Quint</abbr>
       <span class="resource-value" id="r-quintessence">0</span>
     </div>
     <div class="resource">
       <span class="resource-label">Renown</span>
+      <abbr class="resource-label-short" title="Renown">Renown</abbr>
       <span class="resource-value" id="r-renown">0</span>
     </div>
   </div>
@@ -385,7 +663,111 @@
   <span class="idle-msg">Select an activity to begin.</span>
 </div>
 
+<div id="mobile-menu-backdrop" class="mobile-menu-backdrop" hidden onclick="closeMobileMenu()"></div>
+<aside id="mobile-menu" class="mobile-menu" hidden aria-label="Game menu">
+  <div class="mobile-menu-header">
+    <span>Game Menu</span>
+  </div>
+  <div class="mobile-menu-actions">
+    <span class="save-status" id="save-status-mobile"></span>
+    <button type="button" class="save-btn" onclick="saveGame(true); closeMobileMenu()">Save</button>
+    <button type="button" class="save-btn" onclick="exportSave(); closeMobileMenu()">Export</button>
+    <button type="button" class="save-btn" onclick="importSave(); closeMobileMenu()">Import</button>
+    <button type="button" class="save-btn danger" onclick="resetSave(); closeMobileMenu()">Reset</button>
+  </div>
+</aside>
+
 <script>
+// ─────────────────────────────────────────────
+// DEVICE / RESPONSIVE
+// ─────────────────────────────────────────────
+const BREAKPOINTS = { mobile: 640, tablet: 1024 };
+
+const Device = {
+  width: 0,
+  height: 0,
+  isMobile: false,
+  isTablet: false,
+  isDesktop: false,
+  isTouch: false,
+  orientation: 'portrait',
+
+  refresh() {
+    this.width  = window.innerWidth;
+    this.height = window.innerHeight;
+    this.isMobile  = this.width <= BREAKPOINTS.mobile;
+    this.isTablet  = this.width > BREAKPOINTS.mobile && this.width <= BREAKPOINTS.tablet;
+    this.isDesktop = this.width > BREAKPOINTS.tablet;
+    this.isTouch   = window.matchMedia('(pointer: coarse)').matches;
+    this.orientation = this.width >= this.height ? 'landscape' : 'portrait';
+
+    document.body.dataset.device =
+      this.isMobile ? 'mobile' : this.isTablet ? 'tablet' : 'desktop';
+    document.body.dataset.orientation = this.orientation;
+
+    return this;
+  },
+
+  onChange(cb) {
+    const onResize = () => { this.refresh(); cb(this); };
+    window.addEventListener('resize', onResize);
+    window.matchMedia(`(max-width: ${BREAKPOINTS.mobile}px)`).addEventListener('change', onResize);
+    window.matchMedia(`(max-width: ${BREAKPOINTS.tablet}px)`).addEventListener('change', onResize);
+    this.refresh();
+  },
+};
+
+let mobileMenuOpen = false;
+
+function syncHeaderHeight() {
+  const header = document.querySelector('header');
+  if (!header) return;
+  document.documentElement.style.setProperty('--header-height', `${header.offsetHeight}px`);
+}
+
+function syncMobileMenu(open) {
+  mobileMenuOpen = open;
+  const menu = document.getElementById('mobile-menu');
+  const backdrop = document.getElementById('mobile-menu-backdrop');
+  const btn = document.getElementById('menu-btn');
+  if (menu) menu.hidden = !open;
+  if (backdrop) backdrop.hidden = !open;
+  document.body.classList.toggle('menu-open', open);
+  if (btn) {
+    btn.textContent = open ? '✕' : '☰';
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  }
+}
+
+function toggleMobileMenu() {
+  if (!Device.isMobile) return;
+  syncMobileMenu(!mobileMenuOpen);
+}
+
+function openMobileMenu() {
+  if (!Device.isMobile) return;
+  syncMobileMenu(true);
+}
+
+function closeMobileMenu() {
+  syncMobileMenu(false);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && mobileMenuOpen) closeMobileMenu();
+});
+
+const headerEl = document.querySelector('header');
+if (headerEl) {
+  syncHeaderHeight();
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(syncHeaderHeight).observe(headerEl);
+  } else {
+    window.addEventListener('resize', syncHeaderHeight);
+  }
+}
+
 // ─────────────────────────────────────────────
 // SKILLS & ACTIVITIES DATA
 // ─────────────────────────────────────────────
@@ -1271,6 +1653,7 @@ requestAnimationFrame(tick);
 // ─────────────────────────────────────────────
 function selectTab(skillId) {
   S.tab = skillId;
+  if (Device.isMobile) closeMobileMenu();
   renderSidebar();
   renderActivities();
 }
@@ -1322,8 +1705,11 @@ function renderResources() {
     const el = document.getElementById('r-' + k);
     if (el) el.textContent = fmt(v);
   }
+  const tlv = totalLevel();
   const tl = document.getElementById('r-total-level');
-  if (tl) tl.textContent = totalLevel();
+  if (tl) tl.textContent = tlv;
+  const tlm = document.getElementById('r-total-level-mobile');
+  if (tlm) tlm.textContent = tlv;
 }
 
 function renderSidebar() {
@@ -1990,11 +2376,18 @@ function resetSave() {
 
 let saveStatusTimer = null;
 function flashSaveStatus(msg) {
-  const el = document.getElementById('save-status');
-  el.textContent = msg;
-  el.classList.add('show');
+  for (const id of ['save-status', 'save-status-mobile']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.textContent = msg;
+    el.classList.add('show');
+  }
   clearTimeout(saveStatusTimer);
-  saveStatusTimer = setTimeout(() => el.classList.remove('show'), 2000);
+  saveStatusTimer = setTimeout(() => {
+    for (const id of ['save-status', 'save-status-mobile']) {
+      document.getElementById(id)?.classList.remove('show');
+    }
+  }, 2000);
 }
 
 setInterval(() => saveGame(false), AUTOSAVE_INTERVAL);
@@ -2014,6 +2407,10 @@ function renderAll() {
 
 loadGame();
 checkUnlocks();
+Device.onChange(() => {
+  if (!Device.isMobile) closeMobileMenu();
+  renderAll();
+});
 renderAll();
 </script>
 </body>
