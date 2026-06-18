@@ -14,6 +14,7 @@ function el(id) {
 }
 global.document = {
   getElementById: el,
+  querySelector: () => null,
   body: { dataset: {}, classList: { toggle() {} } },
   addEventListener() {},
 };
