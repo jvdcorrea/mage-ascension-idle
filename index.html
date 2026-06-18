@@ -119,8 +119,12 @@
       margin-top: 2px;
     }
     .active-mark {
-      color: var(--magic);
+      color: var(--gold);
       animation: pulse-mark 1.6s ease-in-out infinite;
+    }
+    .upgrade-ready {
+      color: var(--gold);
+      margin-left: 4px;
     }
     @keyframes pulse-mark {
       0%, 100% { opacity: 0.45; }
@@ -1015,10 +1019,15 @@ const UPGRADE_NAMES = {
   explore:     ['Sturdy Boots', 'Detailed Maps', 'Survival Kit', 'Sixth Sense', 'Umbral Compass', 'Walker Between Worlds'],
   fight:       ['Fighting Stance', 'Trophy Collection', 'Signature Move', "Duelist's Honor", 'Feared Reputation', 'Legend of the Arena'],
   barter:      ['Haggling Basics', 'Trusted Trader', 'Rare Goods License', 'Tass Appraisal', 'Node Connections', 'Quintessence Monopoly'],
+  // Teach upgrades double apprentice resource output instead of a skill payoff.
+  teach:       ['Lesson Plans', 'Hands-On Drills', 'Structured Curriculum', 'Master Mentorship', 'Living Tradition', 'School of Thought'],
 };
 
+// Teach joins the upgrade list as a pseudo-skill (its level lives in S.teach).
+const UPGRADE_SKILLS = [...SKILL_IDS, 'teach'];
+
 const UPGRADES = [];
-for (const skillId of SKILL_IDS) {
+for (const skillId of UPGRADE_SKILLS) {
   UPGRADE_NAMES[skillId].forEach((name, i) => {
     UPGRADES.push({
       id: `${skillId}-${i}`,
@@ -1030,16 +1039,34 @@ for (const skillId of SKILL_IDS) {
   });
 }
 
+// Current level of an upgrade's skill — Teach's lives in S.teach.
+function skillLevel(skillId) {
+  return skillId === 'teach' ? S.teach.lv : S.skills[skillId].lv;
+}
+// Display name for an upgrade group (Teach isn't in SKILLS).
+function skillDisplayName(skillId) {
+  return skillId === 'teach' ? 'Teach' : SKILLS[skillId].name;
+}
+
 function payoffMult(skillId) {
   let m = 1;
   for (const u of UPGRADES) if (u.skillId === skillId && S.upgrades[u.id]) m *= 2;
   return m;
 }
 
+// True when at least one upgrade can be bought right now (level met,
+// affordable, not yet owned) — used to flag the Upgrades tab.
+function hasAffordableUpgrade() {
+  return UPGRADES.some(u =>
+    !S.upgrades[u.id] &&
+    skillLevel(u.skillId) >= u.lvReq &&
+    S.res[u.costRes] >= u.cost);
+}
+
 function buyUpgrade(uid) {
   const u = UPGRADES.find(x => x.id === uid);
   if (!u || S.upgrades[u.id]) return;
-  if (S.skills[u.skillId].lv < u.lvReq) return;
+  if (skillLevel(u.skillId) < u.lvReq) return;
   if (S.res[u.costRes] < u.cost) return;
 
   S.res[u.costRes] -= u.cost;
@@ -1298,7 +1325,8 @@ function apprenticeCostRatio(sk) {
   const a0 = sk.activities[0];
   return sk.costRes ? a0.cost / a0.reward : 0;
 }
-function apprenticeReward(level) { return APPR_BASE_REWARD * (1 + level * APPR_K); }
+// Teach upgrades (payoffMult) scale every apprentice's output.
+function apprenticeReward(level) { return APPR_BASE_REWARD * (1 + level * APPR_K) * payoffMult('teach'); }
 function apprenticeDur(level)    { return APPR_BASE_DUR / speed(level) * 2; }
 
 // What a given Renown investment buys (central values; recruiting adds
@@ -1433,6 +1461,19 @@ function updateTeach(dt) {
   return structural;
 }
 
+// True when the player is focused on a form control inside the activity
+// panel (the recruit input or an apprentice's assignment dropdown). While
+// that's the case we must not rebuild the panel, or it would drop focus /
+// close the open dropdown mid-interaction.
+function panelFieldFocused() {
+  const a = typeof document !== 'undefined' ? document.activeElement : null;
+  if (!a) return false;
+  const t = a.tagName;
+  if (t !== 'INPUT' && t !== 'SELECT' && t !== 'TEXTAREA') return false;
+  const panel = document.getElementById('activity-panel');
+  return !!(panel && panel.contains && panel.contains(a));
+}
+
 // Update only the live countdowns/bars on the Teach panel (recruit
 // progress, apprentice setback timers) without rebuilding it.
 function refreshTeachLive() {
@@ -1557,11 +1598,13 @@ function tick(now) {
   if (teachStructural) {
     renderResources();
     renderSidebar();
-    if (S.tab === 'teach') renderActivities();
-  } else if (S.tab === 'teach') {
-    // No structural change — just tick the live bars/timers in place, so
-    // the panel's buttons and selects stay clickable.
-    refreshTeachLive();
+  }
+  if (S.tab === 'teach') {
+    // Rebuild the panel on a structural change, but NOT while the player is
+    // typing in / using a field inside it — that would drop focus or close
+    // an open dropdown. Otherwise just tick the live bars/timers in place.
+    if (teachStructural && !panelFieldFocused()) renderActivities();
+    else refreshTeachLive();
   }
 
   if (S.setback.on) {
@@ -1739,7 +1782,7 @@ function renderSidebar() {
       <div class="skill-lv">${expAvail()} EXP</div>
     </div>` : '') +
     `<div class="skill-tab${S.tab === 'upgrades' ? ' active' : ''}" onclick="selectTab('upgrades')">
-      Upgrades
+      Upgrades${hasAffordableUpgrade() ? ' <span class="upgrade-ready" title="Upgrade available">●</span>' : ''}
       <div class="skill-lv">${Object.keys(S.upgrades).length} / ${UPGRADES.length}</div>
     </div>
     <div class="skill-tab${S.tab === 'unlocks' ? ' active' : ''}" onclick="selectTab('unlocks')">
@@ -1757,13 +1800,15 @@ function renderUpgrades() {
     </div>
   `;
 
-  for (const skillId of SKILL_IDS.filter(isSkillUnlocked)) {
-    const ss = S.skills[skillId];
-    html += `<div class="upgrade-group">${SKILLS[skillId].name} — Level ${ss.lv}</div>`;
+  const groups = [...SKILL_IDS.filter(isSkillUnlocked), ...(S.unlocked.teach ? ['teach'] : [])];
+  for (const skillId of groups) {
+    const lv     = skillLevel(skillId);
+    const effect = skillId === 'teach' ? 'apprentice output' : `${skillDisplayName(skillId)} payoff`;
+    html += `<div class="upgrade-group">${skillDisplayName(skillId)} — Level ${lv}</div>`;
 
     for (const u of UPGRADES.filter(x => x.skillId === skillId)) {
       const done   = !!S.upgrades[u.id];
-      const locked = ss.lv < u.lvReq;
+      const locked = lv < u.lvReq;
       const canBuy = !done && !locked && S.res[u.costRes] >= u.cost;
 
       let state;
@@ -1776,7 +1821,7 @@ function renderUpgrades() {
         <div class="unlock-item${done ? ' done' : ''}${locked ? ' dimmed' : ''}">
           <div>
             <div class="unlock-name">${u.name}</div>
-            <div class="unlock-desc">Doubles ${SKILLS[skillId].name} payoff · unlocks at Lv ${u.lvReq}</div>
+            <div class="unlock-desc">Doubles ${effect} · unlocks at Lv ${u.lvReq}</div>
           </div>
           <div class="unlock-state">${state}</div>
         </div>`;
