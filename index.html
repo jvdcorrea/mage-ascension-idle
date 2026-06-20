@@ -2512,6 +2512,107 @@ function renderAll() {
   renderBottomBar();
 }
 
+// ─────────────────────────────────────────────
+// DEV CHEAT MENU (testing aid)
+// ─────────────────────────────────────────────
+// A floating, collapsible panel to grant resources/levels/sphere points so
+// the sphere effects can be tried without a full playthrough. Everything is
+// guarded: under the headless test stubs (no document.createElement) the
+// menu simply never builds, so it can't break the logic tests.
+function cheatRefresh(msg) {
+  checkUnlocks();
+  renderAll();
+  updateCheatLabels();
+  if (msg) flashSaveStatus(msg);
+}
+function cheatResources(n) {
+  for (const r of Object.keys(S.res)) { S.res[r] += n; S.total[r] += n; }
+  cheatRefresh('Cheat: +' + fmt(n) + ' to every resource');
+}
+function cheatSkillLevels(lv) {
+  for (const id of SKILL_IDS) { S.skills[id].lv = lv; S.skills[id].xp = xpForLevel(lv); }
+  cheatRefresh('Cheat: all skills → Lv ' + lv);
+}
+function cheatTeachLevel(lv) {
+  S.teach.lv = lv; S.teach.xp = xpForTeachLevel(lv);
+  cheatRefresh('Cheat: Teach → Lv ' + lv);
+}
+function cheatUnlockAll() {
+  for (const k of Object.keys(S.unlocked)) S.unlocked[k] = true;
+  cheatRefresh('Cheat: everything unlocked');
+}
+function cheatMaxSpheres() {
+  // Raise skill levels first so Total Level covers the spheres' EXP cost
+  // (9 × 55 = 495) and "EXP available" doesn't read negative.
+  for (const id of SKILL_IDS) if (S.skills[id].lv < 60) { S.skills[id].lv = 60; S.skills[id].xp = xpForLevel(60); }
+  for (const k of Object.keys(S.spheres)) S.spheres[k] = SPHERE_MAX;
+  S.unlocked.spheres = true; S.unlocked.craft = true;
+  cheatRefresh('Cheat: all Spheres maxed (5)');
+}
+// Cycle one sphere 0→1→…→5→0, for testing a single sphere at a chosen level.
+function cheatBumpSphere(id) {
+  S.spheres[id] = (S.spheres[id] + 1) % (SPHERE_MAX + 1);
+  S.unlocked.spheres = true;
+  if (S.spheres.prime >= 1) S.unlocked.craft = true;
+  cheatRefresh(SPHERES.find(sp => sp.id === id).name + ' → ' + S.spheres[id]);
+}
+function cheatResetSave() {
+  if (typeof confirm === 'function' && !confirm('Wipe the save and reload?')) return;
+  try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+  if (typeof location !== 'undefined') location.reload();
+}
+
+const CHEAT_BTN = 'background:var(--panel2,#241a3d);color:var(--text,#eee);border:1px solid var(--border);border-radius:4px;padding:5px 7px;margin:2px;cursor:pointer;font-family:inherit;font-size:.72rem;';
+function updateCheatLabels() {
+  if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
+  for (const sp of SPHERES) {
+    const b = document.getElementById('cheat-sph-' + sp.id);
+    if (b && b.textContent !== undefined) b.textContent = sp.name.slice(0, 4) + ' ' + S.spheres[sp.id];
+  }
+}
+function buildCheatMenu() {
+  if (typeof document === 'undefined' || !document.body ||
+      typeof document.createElement !== 'function' || typeof document.body.appendChild !== 'function') return;
+  let panel = document.getElementById('cheat-menu');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'cheat-menu';
+    panel.style.cssText = 'position:fixed;right:10px;bottom:10px;z-index:9999;font-family:inherit;';
+    document.body.appendChild(panel);
+  }
+  const sphereBtns = SPHERES.map(sp =>
+    `<button id="cheat-sph-${sp.id}" style="${CHEAT_BTN}min-width:54px" onclick="cheatBumpSphere('${sp.id}')">${sp.name.slice(0,4)} ${S.spheres[sp.id]}</button>`
+  ).join('');
+  panel.innerHTML = `
+    <details style="background:var(--panel);border:1px solid var(--border);border-radius:6px;max-width:340px;">
+      <summary style="cursor:pointer;padding:6px 10px;color:var(--accent);font-weight:bold;user-select:none;">🛠 Cheats</summary>
+      <div style="padding:6px;display:flex;flex-direction:column;gap:4px;">
+        <div>
+          <button style="${CHEAT_BTN}" onclick="cheatResources(1e4)">💰 +10k all res</button>
+          <button style="${CHEAT_BTN}" onclick="cheatResources(1e6)">💰 +1M all res</button>
+          <button style="${CHEAT_BTN}" onclick="cheatResources(1e9)">💰 +1B all res</button>
+        </div>
+        <div>
+          <button style="${CHEAT_BTN}" onclick="cheatSkillLevels(50)">⬆ Skills 50</button>
+          <button style="${CHEAT_BTN}" onclick="cheatSkillLevels(100)">⬆ Skills 100</button>
+          <button style="${CHEAT_BTN}" onclick="cheatSkillLevels(250)">⬆ Skills 250</button>
+        </div>
+        <div>
+          <button style="${CHEAT_BTN}" onclick="cheatTeachLevel(100)">🎓 Teach 100</button>
+          <button style="${CHEAT_BTN}" onclick="cheatUnlockAll()">🔓 Unlock all</button>
+          <button style="${CHEAT_BTN}" onclick="cheatMaxSpheres()">🔮 Spheres max</button>
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:4px;">
+          <div style="font-size:.66rem;color:var(--muted,#9a8cc0);margin:2px;">Click a sphere to cycle its level 0→5:</div>
+          ${sphereBtns}
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:4px;">
+          <button style="${CHEAT_BTN}border-color:var(--accent);" onclick="cheatResetSave()">♻ Reset save</button>
+        </div>
+      </div>
+    </details>`;
+}
+
 loadGame();
 checkUnlocks();
 Device.onChange(() => {
@@ -2519,6 +2620,7 @@ Device.onChange(() => {
   renderAll();
 });
 renderAll();
+buildCheatMenu();
 </script>
 </body>
 </html>
