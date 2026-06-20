@@ -2376,7 +2376,13 @@ function serializeSave() {
   });
 }
 
+// Set while a reset is in flight so neither the autosave interval nor the
+// beforeunload handler can re-persist state after we've wiped it (otherwise
+// the reload would just reload the old save).
+let resetting = false;
+
 function saveGame(manual) {
+  if (resetting) return;
   try {
     localStorage.setItem(SAVE_KEY, serializeSave());
     flashSaveStatus(manual ? 'Saved' : 'Autosaved');
@@ -2548,6 +2554,7 @@ function importSave() {
 
 function resetSave() {
   if (!confirm('Erase all progress and start over? This cannot be undone.')) return;
+  resetting = true;
   localStorage.removeItem(SAVE_KEY);
   location.reload();
 }
@@ -2570,6 +2577,7 @@ function flashSaveStatus(msg) {
 
 setInterval(() => saveGame(false), AUTOSAVE_INTERVAL);
 window.addEventListener('beforeunload', () => {
+  if (resetting) return;
   try { localStorage.setItem(SAVE_KEY, serializeSave()); } catch (e) {}
 });
 
@@ -2630,6 +2638,7 @@ function cheatBumpSphere(id) {
 }
 function cheatResetSave() {
   if (typeof confirm === 'function' && !confirm('Wipe the save and reload?')) return;
+  resetting = true;
   try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
   if (typeof location !== 'undefined') location.reload();
 }
