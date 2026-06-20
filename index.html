@@ -1198,6 +1198,67 @@ function craftFactor(skillId, effect) {
   return f;
 }
 
+// ─────────────────────────────────────────────
+// SPHERE EFFECTS — global modifiers (Phase 1)
+// ─────────────────────────────────────────────
+// Each sphere (level 0–5) grants passive effects. The hub below reads the
+// current sphere levels and returns the combined modifiers applied to the
+// PLAYER's own activities. Apprentices are not affected here — they have
+// their own sphere effects (Life/Mind), handled separately. Stacking rules:
+//   • XP per-level bonuses are ADDITIVE (+10% per level across 7 spheres),
+//     then Time 5 doubles all skill XP on top (multiplicative).
+//   • Speed and reward bonuses are MULTIPLICATIVE (e.g. Corr 5 × Time 3 = ×4).
+//   • Setback-chance reductions are MULTIPLICATIVE (combine with Craft boons).
+const sph = id => S.spheres[id];
+
+// Skills whose activities produce Power (Forces 3pt speeds these up).
+const POWER_SKILLS = ['prepare', 'explore'];
+// Spheres that grant +10% skill XP per level at 1pt (additive among themselves).
+const XP_BONUS_SPHERES = ['correspondence','entropy','forces','life','matter','mind','spirit'];
+
+// Skill-XP multiplier: additive +10%/level, then Time 5pt ×2.
+function sphereXpMult() {
+  let bonus = 0;
+  for (const id of XP_BONUS_SPHERES) bonus += 0.10 * sph(id);
+  let m = 1 + bonus;
+  if (sph('time') >= 5) m *= 2;          // Time 5pt: 2× all skill XP
+  return m;
+}
+
+// Activity speed multiplier (higher = faster). 'all'-scope effects hit every
+// skill (incl. Teach Didactics); scoped effects check skillId.
+function sphereSpeedMult(skillId) {
+  let m = 1;
+  if (sph('time') >= 1) m *= 1 + 0.10 * sph('time');               // Time 1pt: +10%/level
+  if (sph('correspondence') >= 5) m *= 2;                          // Corr 5pt: ×2 all
+  if (sph('time') >= 3) m *= 2;                                    // Time 3pt: ×2 all
+  if (sph('forces') >= 3 && POWER_SKILLS.includes(skillId)) m *= 1.4; // Forces 3pt: Power ×1.4
+  if (sph('mind') >= 4 && skillId === 'study') m *= 2;            // Mind 4pt: Study ×2
+  return m;
+}
+
+// Reward (payoff) multiplier from spheres, per skill.
+function sphereRewardMult(skillId) {
+  let m = 1;
+  if (skillId === 'fight')  m *= sph('forces') >= 4 ? 1.5 : sph('forces') >= 2 ? 1.25 : 1; // Forces 2/4pt (4 replaces 2)
+  if (skillId === 'barter') m *= sph('spirit') >= 3 ? 2   : sph('spirit') >= 2 ? 1.5  : 1; // Spirit 2/3pt (3 → ×2)
+  return m;
+}
+
+// Chance (0–1) that a player activity pays out double (Entropy 4/5pt; 5 replaces 4).
+function sphereDoubleRewardChance() {
+  return sph('entropy') >= 5 ? 0.20 : sph('entropy') >= 4 ? 0.10 : 0;
+}
+
+// Setback-chance multiplier (lower = safer); multiplies with Craft setback boons.
+function sphereSetbackMult(skillId) {
+  let m = 1;
+  if (sph('entropy') >= 2) m *= 0.85;                       // Entropy 2pt: −15%
+  if (sph('time') >= 2)    m *= 0.80;                       // Time 2pt: −20%
+  if (sph('forces') >= 5 && skillId === 'fight') m *= 0;    // Forces 5pt: Fight never fails
+  return m;
+}
+
 function actCost(skillId, act) {
   return act.cost * craftFactor(skillId, 'cost');
 }
@@ -1286,8 +1347,9 @@ const TEACH_ACTIVITIES = [
   { name: 'Master being a Master',          dur: 150, xp: 400, unlockLv: 80 },
 ];
 
-// Real duration of a Didactics activity, sped up by the Teach level.
-function teachActDur(act) { return act.dur / speed(S.teach.lv); }
+// Real duration of a Didactics activity, sped up by the Teach level and any
+// global sphere speed effects (Correspondence/Time apply to Didactics too).
+function teachActDur(act) { return act.dur / (speed(S.teach.lv) * sphereSpeedMult('teach')); }
 
 // Teach uses its own, gentler XP curve than the other skills (which grow
 // at 1.2×/level). Slots and Didactics tiers gate on Teach level, so a
@@ -1505,10 +1567,11 @@ function xpForLevel(lv) {
 }
 function xpToNext(lv) { return Math.floor(35 * Math.pow(1.2, lv)); }
 function speed(lv)    { return 1 + lv * 0.05; }
-// A crafted 'speed' boon shortens durations for the matching skill.
+// A crafted 'speed' boon and sphere speed effects shorten durations.
 function effDur(baseDur, lv, skillId) {
   const cs = skillId ? craftFactor(skillId, 'speed') : 1;
-  return baseDur / (speed(lv) * cs);
+  const ss = skillId ? sphereSpeedMult(skillId) : 1;
+  return baseDur / (speed(lv) * cs * ss);
 }
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -1626,7 +1689,7 @@ function tick(now) {
     S.running.dur = dur;
 
     if (S.running.progress >= dur) {
-      gainTeachXp(act.xp);
+      gainTeachXp(act.xp * sphereXpMult());
       S.running = { teach: true, idx: S.running.idx, progress: 0, dur: teachActDur(act) };
       renderResources();
       renderSidebar();
@@ -1645,18 +1708,21 @@ function tick(now) {
     S.running.dur = dur;
 
     if (S.running.progress >= dur) {
-      // Award resource — apply upgrade multiplier and any crafted boon
-      gainRes(sk.resource, actReward(sk, act) * payoffMult(skillId) * craftFactor(skillId, 'reward'));
+      // Award resource — upgrade multiplier, crafted boon and sphere payoff.
+      // Entropy 4/5pt may then double the payout (per-completion roll).
+      let reward = actReward(sk, act) * payoffMult(skillId) * craftFactor(skillId, 'reward') * sphereRewardMult(skillId);
+      if (Math.random() < sphereDoubleRewardChance()) reward *= 2;
+      gainRes(sk.resource, reward);
 
-      // Award XP (proportional to base duration, boosted by any 'xp' boon);
-      // each level-up grants 1 EXP implicitly and may trip an unlock.
-      ss.xp += act.dur * craftFactor(skillId, 'xp');
+      // Award XP (proportional to base duration, boosted by 'xp' boons and
+      // sphere XP effects); each level-up grants 1 EXP and may trip an unlock.
+      ss.xp += act.dur * craftFactor(skillId, 'xp') * sphereXpMult();
       const lvBefore = ss.lv;
       while (ss.xp >= xpForLevel(ss.lv + 1)) ss.lv++;
       if (ss.lv !== lvBefore) checkUnlocks();
 
-      // Risky activities may trigger a setback on completion ('setback' boons reduce the odds)
-      const chance = setbackChance(sk, act, ss.lv) * craftFactor(skillId, 'setback');
+      // Risky activities may trigger a setback ('setback' boons and sphere effects reduce the odds)
+      const chance = setbackChance(sk, act, ss.lv) * craftFactor(skillId, 'setback') * sphereSetbackMult(skillId);
       if (chance > 0 && Math.random() * 100 < chance) {
         const sbDur = setbackDur(act);
         S.setback = { on: true, remaining: sbDur, total: sbDur };
@@ -2022,7 +2088,7 @@ function renderTeach() {
           ${locked ? `<div class="activity-unlock-note">Requires Teach level ${act.unlockLv}</div>` : ''}
         </div>
         <div class="activity-meta">
-          <div class="activity-reward">+${fmt(act.xp)} Teach XP</div>
+          <div class="activity-reward">+${fmt(act.xp * sphereXpMult())} Teach XP</div>
           <div>${fmtTime(dur)}</div>
         </div>
       </div>`;
@@ -2169,9 +2235,9 @@ function renderActivities() {
         </div>
         <div class="activity-meta">
           ${sk.costRes && !locked ? `<div class="activity-cost">−${fmt(actCost(id, act))} ${sk.costRes}</div>` : ''}
-          <div class="activity-reward">+${fmt(actReward(sk, act) * payoffMult(id) * craftFactor(id, 'reward'))} ${sk.resource}</div>
+          <div class="activity-reward">+${fmt(actReward(sk, act) * payoffMult(id) * craftFactor(id, 'reward') * sphereRewardMult(id))} ${sk.resource}</div>
           <div>${fmtTime(dur)}</div>
-          ${sk.risky && !locked ? `<div class="activity-risk">⚠ ${Math.round(setbackChance(sk, act, ss.lv) * craftFactor(id, 'setback'))}% · ${fmtTime(setbackDur(act))} recovery</div>` : ''}
+          ${sk.risky && !locked ? `<div class="activity-risk">⚠ ${Math.round(setbackChance(sk, act, ss.lv) * craftFactor(id, 'setback') * sphereSetbackMult(id))}% · ${fmtTime(setbackDur(act))} recovery</div>` : ''}
         </div>
       </div>`;
   });

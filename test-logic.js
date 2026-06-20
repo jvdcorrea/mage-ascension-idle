@@ -175,5 +175,69 @@ check('unknown sphere ids dropped', !('bogus' in S.spheres));
 check('device detects desktop width', Device.isDesktop);
 check('device body dataset set', document.body.dataset.device === 'desktop');
 
+// --- Sphere effects (Phase 1: global modifiers) ---
+const zeroSpheres = () => { for (const k of Object.keys(S.spheres)) S.spheres[k] = 0; };
+
+zeroSpheres();
+check('xp mult 1 with no spheres', sphereXpMult() === 1);
+check('speed mult 1 with no spheres', sphereSpeedMult('study') === 1);
+check('reward mult 1 with no spheres', sphereRewardMult('fight') === 1);
+check('setback mult 1 with no spheres', sphereSetbackMult('steal') === 1);
+check('double-reward chance 0 with no entropy', sphereDoubleRewardChance() === 0);
+
+// XP: +10% per level additive across the seven xp spheres; Time 5 ×2 on top
+S.spheres.correspondence = 2; S.spheres.entropy = 3;
+check('xp bonus additive (+50%)', Math.abs(sphereXpMult() - 1.5) < 1e-9);
+S.spheres.time = 5;
+check('Time 5 doubles all skill xp (×3 total here)', Math.abs(sphereXpMult() - 3.0) < 1e-9);
+S.spheres.prime = 5;
+check('Prime excluded from +10%/level xp bonus', Math.abs(sphereXpMult() - 3.0) < 1e-9);
+
+// Speed: multiplicative stacking
+zeroSpheres();
+S.spheres.time = 3;                 // per-level 1.3 × 2 (Time 3pt) = 2.6
+check('Time speed stacks (per-level × 2x)', Math.abs(sphereSpeedMult('study') - 2.6) < 1e-9);
+S.spheres.correspondence = 5;       // × 2 → 5.2
+check('Correspondence 5 doubles again', Math.abs(sphereSpeedMult('study') - 5.2) < 1e-9);
+S.spheres.forces = 3;               // Power skills × 1.4
+check('Forces 3 speeds Power skills only',
+  Math.abs(sphereSpeedMult('prepare') - 5.2 * 1.4) < 1e-6 && Math.abs(sphereSpeedMult('venture') - 5.2) < 1e-9);
+S.spheres.mind = 4;                 // Study × 2
+check('Mind 4 speeds Study ×2', Math.abs(sphereSpeedMult('study') - 10.4) < 1e-6);
+
+// effDur integrates sphere speed
+zeroSpheres();
+S.spheres.correspondence = 5;
+check('effDur halved by Corr 5 speed', Math.abs(effDur(100, 0, 'venture') - 50) < 1e-9);
+
+// Reward: Forces (Fight) & Spirit (Barter); higher tier replaces lower
+zeroSpheres();
+S.spheres.forces = 2;
+check('Forces 2 = +25% Fight reward', sphereRewardMult('fight') === 1.25);
+S.spheres.forces = 4;
+check('Forces 4 replaces 2 = +50% Fight', sphereRewardMult('fight') === 1.5);
+S.spheres.spirit = 2;
+check('Spirit 2 = +50% Barter', sphereRewardMult('barter') === 1.5);
+S.spheres.spirit = 3;
+check('Spirit 3 = ×2 Barter', sphereRewardMult('barter') === 2);
+
+// Setback: multiplicative reductions; Forces 5 zeroes Fight setbacks
+zeroSpheres();
+S.spheres.entropy = 2;
+check('Entropy 2 = ×0.85 setback', Math.abs(sphereSetbackMult('steal') - 0.85) < 1e-9);
+S.spheres.time = 2;
+check('Entropy + Time setback multiply (×0.68)', Math.abs(sphereSetbackMult('steal') - 0.68) < 1e-9);
+S.spheres.forces = 5;
+check('Forces 5 = Fight never fails', sphereSetbackMult('fight') === 0);
+
+// Double-reward chance: Entropy 4/5pt (5 replaces 4)
+zeroSpheres();
+S.spheres.entropy = 4;
+check('Entropy 4 = 10% double-reward', sphereDoubleRewardChance() === 0.10);
+S.spheres.entropy = 5;
+check('Entropy 5 = 20% double-reward', sphereDoubleRewardChance() === 0.20);
+
+zeroSpheres(); // leave state clean
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
