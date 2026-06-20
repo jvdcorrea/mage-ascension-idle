@@ -1280,14 +1280,11 @@ const ASSIGNABLE = ['study','prepare','venture','network','steal','investigate',
 // Duration grows per tier; XP scales slightly above duration so higher
 // tiers are marginally more efficient.
 const TEACH_ACTIVITIES = [
-  { name: 'How to teach magic for dummies', dur: 5,   xp: 3,   unlockLv: 0  },
-  { name: 'Study Advanced Didactics',       dur: 20,  xp: 16,  unlockLv: 20 },
-  { name: 'Study Expert Didactics',         dur: 60,  xp: 60,  unlockLv: 50 },
-  { name: 'Master being a Master',          dur: 150, xp: 200, unlockLv: 80 },
+  { name: 'How to teach magic for dummies', dur: 5,   xp: 6,   unlockLv: 0  },
+  { name: 'Study Advanced Didactics',       dur: 20,  xp: 32,  unlockLv: 20 },
+  { name: 'Study Expert Didactics',         dur: 60,  xp: 120, unlockLv: 50 },
+  { name: 'Master being a Master',          dur: 150, xp: 400, unlockLv: 80 },
 ];
-// Each apprentice completion also teaches the mage a fraction of the XP
-// the apprentice earned for itself.
-const APPR_TEACH_XP_FRACTION = 0.1;
 
 // Real duration of a Didactics activity, sped up by the Teach level.
 function teachActDur(act) { return act.dur / speed(S.teach.lv); }
@@ -1438,8 +1435,6 @@ function updateTeach(dt) {
       a.stalled = false;
 
       gainRes(sk.resource, reward);
-      // The apprentice's practice also teaches the mage a little.
-      gainTeachXp(APPR_BASE_DUR * APPR_TEACH_XP_FRACTION);
 
       a.xp += APPR_BASE_DUR;
       while (a.level < APPR_MAX_LEVEL && a.xp >= xpForApprenticeLevel(a.level + 1)) a.level++;
