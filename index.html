@@ -2768,7 +2768,8 @@ function buildCheatMenu() {
   if (!panel) {
     panel = document.createElement('div');
     panel.id = 'cheat-menu';
-    panel.style.cssText = 'position:fixed;right:10px;bottom:10px;z-index:9999;font-family:inherit;';
+    // Hidden by default — toggled with the key just under Esc (see toggleCheatMenu).
+    panel.style.cssText = 'position:fixed;right:10px;bottom:10px;z-index:9999;font-family:inherit;display:none;';
     document.body.appendChild(panel);
   }
   const sphereBtns = SPHERES.map(sp =>
@@ -2799,9 +2800,31 @@ function buildCheatMenu() {
         </div>
         <div style="border-top:1px solid var(--border);padding-top:4px;">
           <button style="${CHEAT_BTN}border-color:var(--accent);" onclick="cheatResetSave()">♻ Reset save</button>
+          <span style="font-size:.62rem;color:var(--muted,#9a8cc0);margin-left:6px;">toggle: key under Esc (\`)</span>
         </div>
       </div>
     </details>`;
+}
+
+// Show/hide the cheat menu. Bound to the key just under Esc (code 'Backquote'),
+// which is layout-independent so it works on any keyboard.
+function toggleCheatMenu() {
+  if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
+  const panel = document.getElementById('cheat-menu');
+  if (!panel) return;
+  const show = panel.style.display === 'none';
+  panel.style.display = show ? '' : 'none';
+  const det = panel.querySelector && panel.querySelector('details');
+  if (det && show) det.open = true; // open it ready-to-use when revealed
+}
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('keydown', (e) => {
+    if (e.code !== 'Backquote') return;
+    const ae = document.activeElement;
+    if (ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) return; // don't hijack typing
+    e.preventDefault();
+    toggleCheatMenu();
+  });
 }
 
 loadGame();
