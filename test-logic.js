@@ -32,7 +32,7 @@ global.prompt = () => null;
 global.alert = () => {};
 global.confirm = () => false;
 
-eval(script + '\n;globalThis.S = S; globalThis.Device = Device;');
+eval(script + '\n;globalThis.S = S; globalThis.Device = Device; globalThis.SKILLS = SKILLS;');
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -291,6 +291,47 @@ check('save/load keeps 3 specials at full level',
   reload.length === 3 && reload.filter(a => a.level === 200).length === 2 && reload.some(a => a.name === 'Djinn'));
 
 zeroSpheres(); freshTeach();
+
+// --- Sphere effects (Phase 3a: sphere-gated activities) ---
+zeroSpheres();
+const steal = SKILLS.steal;
+const rts = steal.activities[steal.activities.length - 1];
+check('Reach Through Space added to Steal', rts.name === 'Reach Through Space');
+check('Reach Through Space gated by Correspondence 2', !actSphereMet(rts));
+S.spheres.correspondence = 2;
+check('Correspondence 2 unlocks Reach Through Space', actSphereMet(rts));
+check('Reach Through Space is riskless (0% setback)', setbackChance(steal, rts, 0) === 0);
+check('Reach Through Space reward is finite (no NaN)', isFinite(actReward(steal, rts)) && actReward(steal, rts) === 13);
+
+// Kill an Avatar — special multi-resource cost & reward
+zeroSpheres();
+const fight = SKILLS.fight;
+const ka = fight.activities[fight.activities.length - 1];
+check('Kill an Avatar added to Fight', ka.name === 'Kill an Avatar' && ka.special === 'killAvatar');
+check('Kill an Avatar gated by Spirit 5', !actSphereMet(ka));
+S.spheres.spirit = 5;
+check('Spirit 5 unlocks Kill an Avatar', actSphereMet(ka));
+check('Kill an Avatar cost text shows renown (no NaN)',
+  actCostText('fight', ka).includes('renown') && !actCostText('fight', ka).includes('NaN'));
+check('Kill an Avatar reward text lists all four resources',
+  ['knowledge','money','power','quintessence'].every(r => actRewardText('fight', ka).includes(r)));
+S.res.renown = 999;
+check('Kill an Avatar unaffordable below 1000 renown', !tryPayCost('fight', fight, ka));
+S.res.renown = 1000;
+check('Kill an Avatar pays 1000 renown', tryPayCost('fight', fight, ka) && Math.abs(S.res.renown) < 1e-9);
+
+// startActivity respects sphere gating
+zeroSpheres();
+S.running = null; S.setback = { on:false, remaining:0, total:0 }; S.teach.recruiting = null;
+S.skills.venture.lv = 100; // above the lv-60 skill gate for Gamble and win
+const gambleIdx = SKILLS.venture.activities.findIndex(a => a.name === 'Gamble and win');
+startActivity('venture', gambleIdx);
+check('cannot start Gamble and win without Entropy 3', S.running === null);
+S.spheres.entropy = 3;
+startActivity('venture', gambleIdx);
+check('Entropy 3 lets Gamble and win start', !!S.running && S.running.idx === gambleIdx);
+S.running = null;
+zeroSpheres();
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

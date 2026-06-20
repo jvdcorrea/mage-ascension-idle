@@ -809,8 +809,10 @@ const SKILLS = {
       { name: 'Study advanced battle tactics', dur: 93,  reward: 24.0 },
       { name: 'Train with martial spirits',    dur: 140, reward: 37.0 },
       { name: 'Embody the art of war',         dur: 210, reward: 57.0 },
+      // Correspondence 4pt — a more efficient end-game Prepare.
+      { name: 'Ward up the place',             dur: 210, reward: 100.0, sphereReq: { id: 'correspondence', lv: 4 } },
     ],
-    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225],
+    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225, 250],
   },
   venture: {
     name: 'Venture',
@@ -827,8 +829,10 @@ const SKILLS = {
       { name: 'Run a large business',           dur: 93,  reward: 24.0 },
       { name: 'Run a risky business',           dur: 140, reward: 37.0 },
       { name: 'Let the money work for itself',  dur: 210, reward: 57.0 },
+      // Entropy 3pt — a 2× efficient mid-game Venture.
+      { name: 'Gamble and win',                 dur: 27,  reward: 13.0, sphereReq: { id: 'entropy', lv: 3 } },
     ],
-    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225],
+    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225, 60],
   },
   network: {
     name: 'Network',
@@ -845,8 +849,10 @@ const SKILLS = {
       { name: 'Build a public persona',        dur: 93,  reward: 24.0 },
       { name: 'Give a public talk',            dur: 140, reward: 37.0 },
       { name: 'Influence the consensus',       dur: 210, reward: 57.0 },
+      // Mind 3pt — an extra-effective end-game Network.
+      { name: 'Manipulate Society',            dur: 210, reward: 100.0, sphereReq: { id: 'mind', lv: 3 } },
     ],
-    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225],
+    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225, 250],
   },
   steal: {
     name: 'Steal',
@@ -863,8 +869,10 @@ const SKILLS = {
       { name: 'Pull a sophisticated con',            dur: 93,  reward: 24.0, risk: 1.7 },
       { name: 'Heist a jewelry store',               dur: 140, reward: 37.0, risk: 1.8 },
       { name: 'Steal from a heavily guarded vault',  dur: 210, reward: 57.0, risk: 1.9 },
+      // Correspondence 2pt — a riskless mid-game Steal that keeps the risky payout.
+      { name: 'Reach Through Space',                 dur: 40,  reward: 13.0, risk: 0, sphereReq: { id: 'correspondence', lv: 2 } },
     ],
-    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225],
+    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225, 60],
   },
   investigate: {
     name: 'Investigate',
@@ -918,8 +926,13 @@ const SKILLS = {
       { name: 'Defeat a seasoned mage',            dur: 93,  reward: 36.0, cost: 24.0, risk: 1.7 },
       { name: 'Dismantle a rival cabal',           dur: 140, reward: 55.5, cost: 37.0, risk: 1.8 },
       { name: 'Challenge a fellow Master',         dur: 210, reward: 85.5, cost: 57.0, risk: 1.9 },
+      // Spirit 5pt — spend 1000 Renown to slay an Avatar for 1000 of every resource.
+      { name: 'Kill an Avatar', dur: 60, risk: 0, special: 'killAvatar',
+        costAll: { renown: 1000 },
+        rewardAll: { knowledge: 1000, money: 1000, power: 1000, quintessence: 1000 },
+        sphereReq: { id: 'spirit', lv: 5 } },
     ],
-    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225],
+    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225, 0],
   },
   barter: {
     name: 'Barter',
@@ -937,8 +950,10 @@ const SKILLS = {
       { name: 'Trade with a Tradition merchant',    dur: 93,  reward: 12.0, cost: 24.0 },
       { name: 'Trade with a powerful Prime Mage',   dur: 140, reward: 18.5, cost: 37.0 },
       { name: 'Control a Quintessence trade hub',   dur: 210, reward: 28.5, cost: 57.0 },
+      // Correspondence 4pt — a costless mid-game Barter.
+      { name: 'Ward up an allied sanctum',          dur: 27,  reward: 3.3,  cost: 0, sphereReq: { id: 'correspondence', lv: 4 } },
     ],
-    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225],
+    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225, 60],
   },
 };
 
@@ -988,6 +1003,11 @@ function gainRes(res, amt) {
 // Consumption skills (Fight, Barter) pay their cost at the start of
 // each cycle. Returns false without deducting if it can't be afforded.
 function tryPayCost(skillId, sk, act) {
+  if (act.costAll) { // special multi-resource cost (Kill an Avatar)
+    for (const r in act.costAll) if ((S.res[r] || 0) < act.costAll[r]) return false;
+    for (const r in act.costAll) S.res[r] -= act.costAll[r];
+    return true;
+  }
   if (!sk.costRes) return true;
   const cost = actCost(skillId, act);
   if (S.res[sk.costRes] < cost) return false;
@@ -1268,6 +1288,22 @@ function sphereApprSetbackDurMult()   { return sph('life') >= 3 ? 0.5 : 1; } // 
 function sphereExtraApprenticeSlots() { return sph('mind') >= 2 ? 1 : 0; }   // Mind 2pt: +1 slot
 // Player setback recovery: Life 2pt halves it, Life 3pt thirds it (3 replaces 2).
 function spherePlayerSetbackDurMult() { return sph('life') >= 3 ? 1/3 : sph('life') >= 2 ? 1/2 : 1; }
+
+// Some activities also gate on a sphere level (e.g. Corr 2 → Reach Through Space).
+function actSphereMet(act)  { return !act.sphereReq || sph(act.sphereReq.id) >= act.sphereReq.lv; }
+function sphereReqText(act) { return act.sphereReq ? SPHERES.find(sp => sp.id === act.sphereReq.id).name + ' ' + act.sphereReq.lv : ''; }
+// Text for an activity's cost — supports the normal single costRes and the
+// special multi-resource costAll (Kill an Avatar). Empty when there's no cost.
+function actCostText(skillId, act) {
+  if (act.costAll) return Object.entries(act.costAll).map(([r, a]) => `−${fmt(a)} ${r}`).join(' · ');
+  const c = SKILLS[skillId].costRes ? actCost(skillId, act) : 0;
+  return c > 0 ? `−${fmt(c)} ${SKILLS[skillId].costRes}` : '';
+}
+// Text for an activity's reward — supports rewardAll (Kill an Avatar).
+function actRewardText(skillId, act) {
+  if (act.rewardAll) return Object.entries(act.rewardAll).map(([r, a]) => `+${fmt(a)} ${r}`).join(' · ');
+  return `+${fmt(actReward(SKILLS[skillId], act) * payoffMult(skillId) * craftFactor(skillId, 'reward') * sphereRewardMult(skillId))} ${SKILLS[skillId].resource}`;
+}
 
 function actCost(skillId, act) {
   return act.cost * craftFactor(skillId, 'cost');
@@ -1765,11 +1801,16 @@ function tick(now) {
     S.running.dur = dur;
 
     if (S.running.progress >= dur) {
-      // Award resource — upgrade multiplier, crafted boon and sphere payoff.
-      // Entropy 4/5pt may then double the payout (per-completion roll).
-      let reward = actReward(sk, act) * payoffMult(skillId) * craftFactor(skillId, 'reward') * sphereRewardMult(skillId);
-      if (Math.random() < sphereDoubleRewardChance()) reward *= 2;
-      gainRes(sk.resource, reward);
+      // Award resource(s). Most activities pay one resource (upgrade ×, crafted
+      // boon, sphere payoff, and the Entropy 4/5pt double-reward roll). A few
+      // special ones (Kill an Avatar) pay a fixed bundle via rewardAll.
+      if (act.rewardAll) {
+        for (const r in act.rewardAll) gainRes(r, act.rewardAll[r]);
+      } else {
+        let reward = actReward(sk, act) * payoffMult(skillId) * craftFactor(skillId, 'reward') * sphereRewardMult(skillId);
+        if (Math.random() < sphereDoubleRewardChance()) reward *= 2;
+        gainRes(sk.resource, reward);
+      }
 
       // Award XP (proportional to base duration, boosted by 'xp' boons and
       // sphere XP effects); each level-up grants 1 EXP and may trip an unlock.
@@ -1793,7 +1834,7 @@ function tick(now) {
         S.running = { skillId, idx, progress: 0, dur: effDur(act.dur, ss.lv, skillId) };
       } else {
         S.running = null;
-        haltMsg = `Not enough ${sk.costRes} to continue "${act.name}".`;
+        haltMsg = `Not enough ${act.costAll ? Object.keys(act.costAll).join('/') : sk.costRes} to continue "${act.name}".`;
       }
 
       renderResources();
@@ -1823,13 +1864,13 @@ function startActivity(skillId, idx) {
   if (S.setback.on) return;
   if (S.teach.recruiting) return;   // busy training — the bottom bar explains it
   const ss = S.skills[skillId];
-  if (ss.lv < SKILLS[skillId].unlocks[idx]) return;
-
   const sk  = SKILLS[skillId];
   const act = sk.activities[idx];
+  if (!act || ss.lv < sk.unlocks[idx] || !actSphereMet(act)) return;
+
   if (!tryPayCost(skillId, sk, act)) {
     S.running = null;
-    haltMsg = `Not enough ${sk.costRes} to start "${act.name}".`;
+    haltMsg = `Not enough ${act.costAll ? Object.keys(act.costAll).join('/') : sk.costRes} to start "${act.name}".`;
     renderActivities();
     renderBottomBar();
     return;
@@ -2285,22 +2326,28 @@ function renderActivities() {
 
   sk.activities.forEach((act, i) => {
     const unlockLv = sk.unlocks[i];
-    const locked   = ss.lv < unlockLv;
+    const lvLocked = ss.lv < unlockLv;
+    const sphLocked = !actSphereMet(act);
+    const locked   = lvLocked || sphLocked;
     const running  = S.running && S.running.skillId === id && S.running.idx === i;
     const dur      = effDur(act.dur, ss.lv, id);
+    // Show whichever requirement isn't met yet (skill level takes priority).
+    const lockNote = lvLocked ? `Requires level ${unlockLv}` : sphLocked ? `Requires ${sphereReqText(act)}` : '';
+    const costTxt  = locked ? '' : actCostText(id, act);
+    const riskPct  = Math.round(setbackChance(sk, act, ss.lv) * craftFactor(id, 'setback') * sphereSetbackMult(id));
 
     html += `
       <div class="activity-item${locked ? ' locked' : ''}${running ? ' running' : ''}"
            onclick="startActivity('${id}', ${i})">
         <div>
           <div class="activity-name">${act.name}</div>
-          ${locked ? `<div class="activity-unlock-note">Requires level ${unlockLv}</div>` : ''}
+          ${locked ? `<div class="activity-unlock-note">${lockNote}</div>` : ''}
         </div>
         <div class="activity-meta">
-          ${sk.costRes && !locked ? `<div class="activity-cost">−${fmt(actCost(id, act))} ${sk.costRes}</div>` : ''}
-          <div class="activity-reward">+${fmt(actReward(sk, act) * payoffMult(id) * craftFactor(id, 'reward') * sphereRewardMult(id))} ${sk.resource}</div>
+          ${costTxt ? `<div class="activity-cost">${costTxt}</div>` : ''}
+          <div class="activity-reward">${actRewardText(id, act)}</div>
           <div>${fmtTime(dur)}</div>
-          ${sk.risky && !locked ? `<div class="activity-risk">⚠ ${Math.round(setbackChance(sk, act, ss.lv) * craftFactor(id, 'setback') * sphereSetbackMult(id))}% · ${fmtTime(setbackDur(act))} recovery</div>` : ''}
+          ${sk.risky && !locked && riskPct > 0 ? `<div class="activity-risk">⚠ ${riskPct}% · ${fmtTime(setbackDur(act))} recovery</div>` : ''}
         </div>
       </div>`;
   });
