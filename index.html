@@ -1182,48 +1182,90 @@ function buySphere(id) {
 //   setback → ×setback chance on risky activities    (mag < 1, a reduction)
 //   cost    → ×resource cost of consumption skills   (mag < 1, a reduction)
 // scope is 'all', or a list of skill ids the effect applies to.
+// Each item carries one or more effects: [{ effect, mag }]. Active items
+// combine multiplicatively per (skill, effect).
 const CRAFT_ITEMS = [
-  // ── Tier 1 · Prime 1 — Lesser Charms (focused, charge-based) ──
+  // ── Tier 1 · Prime 1 — Lesser Charms (focused pairs, 30 min) ──
   { id:'scholars_lens', tier:1, name:"Scholar's Lens",
-    effect:'reward', mag:1.5, scope:['study','investigate'],
-    mode:'charges', amount:10, cost:30,
-    desc:'Next 10 Study or Investigate activities yield +50% reward.' },
+    effects:[{ effect:'reward', mag:1.5 }], scope:['study','investigate'],
+    mode:'time', amount:1800, cost:30,
+    desc:'For 30 minutes, Study and Investigate activities yield +50% reward.' },
   { id:'warriors_brand', tier:1, name:"Warrior's Brand",
-    effect:'reward', mag:1.5, scope:['prepare','fight'],
-    mode:'charges', amount:10, cost:30,
-    desc:'Next 10 Prepare or Fight activities yield +50% reward.' },
+    effects:[{ effect:'reward', mag:1.5 }], scope:['prepare','fight'],
+    mode:'time', amount:1800, cost:30,
+    desc:'For 30 minutes, Prepare and Fight activities yield +50% reward.' },
   { id:'merchants_seal', tier:1, name:"Merchant's Seal",
-    effect:'reward', mag:1.5, scope:['venture','barter'],
-    mode:'charges', amount:10, cost:30,
-    desc:'Next 10 Venture or Barter activities yield +50% reward.' },
+    effects:[{ effect:'reward', mag:1.5 }], scope:['venture','barter'],
+    mode:'time', amount:1800, cost:30,
+    desc:'For 30 minutes, Venture and Barter activities yield +50% reward.' },
+  { id:'infiltrators_boots', tier:1, name:"Infiltrator's Boots",
+    effects:[{ effect:'reward', mag:1.5 }], scope:['explore','steal'],
+    mode:'time', amount:1800, cost:30,
+    desc:'For 30 minutes, Explore and Steal activities yield +50% reward.' },
+  { id:'patrons_crest', tier:1, name:"Patron's Crest",
+    effects:[{ effect:'reward', mag:1.5 }], scope:['network','teach'],
+    mode:'time', amount:1800, cost:30,
+    desc:'For 30 minutes, Network activities and apprentice output yield +50%.' },
+  { id:'sages_incense', tier:1, name:"Sage's Incense",
+    effects:[{ effect:'reward', mag:1.5 }], scope:['meditate'],
+    mode:'time', amount:1800, cost:30,
+    desc:'For 30 minutes, Meditate activities yield +50% reward.' },
 
-  // ── Tier 2 · Prime 2 — Warded Talismans (broad, time-based) ──
+  // ── Tier 2 · Prime 2 — Charms (broad, 1 hour) ──
   { id:'hourglass_focus', tier:2, name:'Hourglass of Focus',
-    effect:'speed', mag:1.5, scope:'all',
+    effects:[{ effect:'speed', mag:1.5 }], scope:'all',
     mode:'time', amount:3600, cost:80,
-    desc:'For the next 1 hour, all activities are 50% faster.' },
+    desc:'For 1 hour, all activities are 50% faster.' },
   { id:'charm_insight', tier:2, name:'Charm of Insight',
-    effect:'xp', mag:2, scope:'all',
+    effects:[{ effect:'xp', mag:2 }], scope:'all',
     mode:'time', amount:3600, cost:80,
-    desc:'For the next 1 hour, all activities grant double XP.' },
+    desc:'For 1 hour, all activities grant double XP.' },
   { id:'ward_safety', tier:2, name:'Ward of Safety',
-    effect:'setback', mag:0.4, scope:'all',
-    mode:'time', amount:7200, cost:70,
-    desc:'For the next 2 hours, risky activities are 60% less likely to backfire.' },
+    effects:[{ effect:'setback', mag:0.4 }], scope:'all',
+    mode:'time', amount:3600, cost:80,
+    desc:'For 1 hour, risky activities are 60% less likely to backfire.' },
 
-  // ── Tier 3 · Prime 3 — Greater Relics (potent, mixed) ──
+  // ── Tier 3 · Prime 3 — Greater Charms (potent, 1–2 hours) ──
   { id:'philosophers_stone', tier:3, name:"Philosopher's Stone",
-    effect:'reward', mag:2, scope:'all',
-    mode:'charges', amount:15, cost:200,
-    desc:'Next 15 activities of any kind yield double resources.' },
+    effects:[{ effect:'reward', mag:2 }], scope:'all',
+    mode:'time', amount:7200, cost:250,
+    desc:'For 2 hours, activities of any kind yield double resources.' },
   { id:'sigil_mastery', tier:3, name:'Sigil of Mastery',
-    effect:'speed', mag:2, scope:'all',
-    mode:'charges', amount:12, cost:220,
-    desc:'Next 12 activities of any kind are twice as fast.' },
-  { id:'talisman_frugality', tier:3, name:'Talisman of Frugality',
-    effect:'cost', mag:0.5, scope:['fight','barter'],
-    mode:'time', amount:7200, cost:150,
-    desc:'For the next 2 hours, Fight and Barter cost half as much.' },
+    effects:[{ effect:'speed', mag:2 }], scope:'all',
+    mode:'time', amount:7200, cost:250,
+    desc:'For 2 hours, activities of any kind are twice as fast.' },
+  { id:'mark_of_challenge', tier:3, name:'Mark of Challenge',
+    effects:[{ effect:'reward', mag:2 }, { effect:'setback', mag:2 }], scope:'all',
+    mode:'time', amount:3600, cost:100,
+    desc:'For 1 hour, risky activities carry double the risk for double the reward.' },
+
+  // ── Tier 4 · Prime 4 — Talismans (1 hour) ──
+  { id:'crown_of_avarice', tier:4, name:'Crown of Avarice',
+    effects:[{ effect:'reward', mag:3 }], scope:'all',
+    mode:'time', amount:3600, cost:1000,
+    desc:'For 1 hour, all activities yield triple resources.' },
+  { id:'chronomancers_watch', tier:4, name:"Chronomancer's Watch",
+    effects:[{ effect:'speed', mag:3 }], scope:'all',
+    mode:'time', amount:3600, cost:1000,
+    desc:'For 1 hour, all activities are three times as fast.' },
+  { id:'digital_web', tier:4, name:'Digital Web Immersion System',
+    effects:[{ effect:'reward', mag:0 }, { effect:'xp', mag:4 }], scope:'all',
+    mode:'time', amount:3600, cost:1000,
+    desc:'For 1 hour, all activities grant quadruple XP but no resources.' },
+
+  // ── Tier 5 · Prime 5 — Masterworks (1 hour) ──
+  { id:'portable_ftl', tier:5, name:'Portable FTL Engine',
+    effects:[{ effect:'reward', mag:4 }], scope:'all',
+    mode:'time', amount:3600, cost:5000,
+    desc:'For 1 hour, all activities yield quadruple resources.' },
+  { id:'sigil_eternity', tier:5, name:'Sigil of Eternity',
+    effects:[{ effect:'speed', mag:4 }], scope:'all',
+    mode:'time', amount:3600, cost:5000,
+    desc:'For 1 hour, all activities are four times as fast.' },
+  { id:'infinity_mind', tier:5, name:'Infinity Mind',
+    effects:[{ effect:'xp', mag:4 }], scope:'all',
+    mode:'time', amount:3600, cost:5000,
+    desc:'For 1 hour, all activities grant quadruple XP.' },
 ];
 const CRAFT_BY_ID = Object.fromEntries(CRAFT_ITEMS.map(it => [it.id, it]));
 const CRAFT_MAX_TIER = Math.max(...CRAFT_ITEMS.map(it => it.tier));
@@ -1231,14 +1273,15 @@ const CRAFT_MAX_TIER = Math.max(...CRAFT_ITEMS.map(it => it.tier));
 // Highest craftable tier — one tier per level of the Prime sphere.
 function craftTierUnlocked() { return S.spheres.prime; }
 
-// Combined multiplier from every active item matching (skillId, effect).
+// Combined multiplier from every active item's matching (skillId, effect).
+// An item may carry several effects; each is multiplied in independently.
 function craftFactor(skillId, effect) {
   let f = 1;
   for (const a of S.craftActive) {
     const def = CRAFT_BY_ID[a.id];
-    if (!def || def.effect !== effect) continue;
+    if (!def || !def.effects) continue;
     if (def.scope !== 'all' && !def.scope.includes(skillId)) continue;
-    f *= def.mag;
+    for (const e of def.effects) if (e.effect === effect) f *= e.mag;
   }
   return f;
 }
@@ -1479,8 +1522,9 @@ function apprenticeCostRatio(sk) {
   const a0 = sk.activities[0];
   return sk.costRes ? a0.cost / a0.reward : 0;
 }
-// Teach upgrades (payoffMult) scale every apprentice's output.
-function apprenticeReward(level) { return APPR_BASE_REWARD * (1 + level * APPR_K) * payoffMult('teach'); }
+// Teach upgrades (payoffMult) and any active Teach-scoped Craft boon
+// (e.g. Patron's Crest) scale every apprentice's output.
+function apprenticeReward(level) { return APPR_BASE_REWARD * (1 + level * APPR_K) * payoffMult('teach') * craftFactor('teach', 'reward'); }
 // Half a player's speed, then sped up by Life 4pt.
 function apprenticeDur(level)    { return APPR_BASE_DUR / speed(level) * 2 / sphereApprSpeedMult(); }
 

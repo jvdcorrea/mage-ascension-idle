@@ -32,7 +32,7 @@ global.prompt = () => null;
 global.alert = () => {};
 global.confirm = () => false;
 
-eval(script + '\n;globalThis.S = S; globalThis.Device = Device; globalThis.SKILLS = SKILLS; globalThis.UPGRADES = UPGRADES;');
+eval(script + '\n;globalThis.S = S; globalThis.Device = Device; globalThis.SKILLS = SKILLS; globalThis.UPGRADES = UPGRADES; globalThis.CRAFT_ITEMS = CRAFT_ITEMS;');
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -414,6 +414,43 @@ check('save/load restores time ward cooldown', Math.abs(S.timeWardCd - 123) < 1e
 
 zeroSpheres();
 S.timeWardCd = 0;
+
+// --- Craft (updated recipe list + multi-effect support) ---
+S.craftActive = [];
+check('18 craft recipes across 5 tiers',
+  CRAFT_ITEMS.length === 18 && Math.max(...CRAFT_ITEMS.map(i => i.tier)) === 5);
+check('all recipes are time-based', CRAFT_ITEMS.every(i => i.mode === 'time'));
+
+S.craftActive = [{ id: 'crown_of_avarice', remaining: 3600 }];
+check('Crown of Avarice = reward ×3 (all)', craftFactor('study', 'reward') === 3);
+
+// multi-effect: Mark of Challenge = reward ×2 AND setback ×2
+S.craftActive = [{ id: 'mark_of_challenge', remaining: 3600 }];
+check('Mark of Challenge doubles reward', craftFactor('steal', 'reward') === 2);
+check('Mark of Challenge doubles setback risk', craftFactor('steal', 'setback') === 2);
+
+// Digital Web: reward ×0, xp ×4
+S.craftActive = [{ id: 'digital_web', remaining: 3600 }];
+check('Digital Web zeroes reward', craftFactor('study', 'reward') === 0);
+check('Digital Web quadruples xp', craftFactor('study', 'xp') === 4);
+
+// scope: Sage's Incense only affects Meditate
+S.craftActive = [{ id: 'sages_incense', remaining: 1800 }];
+check("Sage's Incense boosts Meditate only",
+  craftFactor('meditate', 'reward') === 1.5 && craftFactor('study', 'reward') === 1);
+
+// Patron's Crest (teach scope) boosts apprentice output ×1.5
+S.craftActive = [];
+const apprNoBoon = apprenticeReward(10);
+S.craftActive = [{ id: 'patrons_crest', remaining: 1800 }];
+check("Patron's Crest boosts apprentice output ×1.5",
+  Math.abs(apprenticeReward(10) - apprNoBoon * 1.5) < 1e-9);
+
+// boons stack multiplicatively
+S.craftActive = [{ id: 'crown_of_avarice', remaining: 3600 }, { id: 'portable_ftl', remaining: 3600 }];
+check('reward boons stack (×3 × ×4 = ×12)', craftFactor('venture', 'reward') === 12);
+
+S.craftActive = [];
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
