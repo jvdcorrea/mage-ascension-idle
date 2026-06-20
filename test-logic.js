@@ -333,5 +333,17 @@ check('Entropy 3 lets Gamble and win start', !!S.running && S.running.idx === ga
 S.running = null;
 zeroSpheres();
 
+// --- Sphere effects (Phase 3b: Matter 3pt passive Money) ---
+zeroSpheres();
+S.res.money = 1000;
+updatePassiveMoney(60);
+check('no passive money without Matter 3', S.res.money === 1000);
+S.spheres.matter = 3;
+const tot0 = S.total.money;
+updatePassiveMoney(60); // 1 minute → +0.5% of 1000 = +5
+check('Matter 3 = +0.5% money per minute', Math.abs(S.res.money - 1005) < 1e-6);
+check('passive money adds to lifetime total', Math.abs(S.total.money - (tot0 + 5)) < 1e-6);
+zeroSpheres();
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

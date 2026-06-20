@@ -1289,6 +1289,17 @@ function sphereExtraApprenticeSlots() { return sph('mind') >= 2 ? 1 : 0; }   // 
 // Player setback recovery: Life 2pt halves it, Life 3pt thirds it (3 replaces 2).
 function spherePlayerSetbackDurMult() { return sph('life') >= 3 ? 1/3 : sph('life') >= 2 ? 1/2 : 1; }
 
+// Matter 3pt — passive Money: 0.5% of current Money per minute (compounds).
+function passiveMoneyRate() { return sph('matter') >= 3 ? 0.005 / 60 : 0; } // per second
+function updatePassiveMoney(dt) {
+  const rate = passiveMoneyRate();
+  if (rate <= 0 || S.res.money <= 0) return false;
+  const gain = S.res.money * rate * dt;
+  S.res.money += gain;
+  S.total.money += gain;
+  return gain > 0;
+}
+
 // Some activities also gate on a sphere level (e.g. Corr 2 → Reach Through Space).
 function actSphereMet(act)  { return !act.sphereReq || sph(act.sphereReq.id) >= act.sphereReq.lv; }
 function sphereReqText(act) { return act.sphereReq ? SPHERES.find(sp => sp.id === act.sphereReq.id).name + ' ' + act.sphereReq.lv : ''; }
@@ -1757,6 +1768,9 @@ function tick(now) {
     if (teachStructural && !panelFieldFocused()) renderActivities();
     else refreshTeachLive();
   }
+
+  // Matter 3pt passive Money — runs in parallel, even during a setback.
+  if (updatePassiveMoney(dt)) renderResources();
 
   if (S.setback.on) {
     S.setback.remaining = Math.max(0, S.setback.remaining - dt);
