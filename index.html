@@ -955,6 +955,26 @@ const SKILLS = {
     ],
     unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225, 60],
   },
+  // Arcana skill — unlocked by Prime 2. Gathers Quintessence by magical means,
+  // costless and riskless (the mage draws power straight from the Tapestry).
+  meditate: {
+    name: 'Meditate',
+    resource: 'quintessence',
+    risky: false,
+    activities: [
+      { name: 'Sit in quiet contemplation',          dur: 5,   reward: 0.5  },
+      { name: 'Breathe and center the self',         dur: 8,   reward: 0.9  },
+      { name: 'Open the mind to the flow of Prime',  dur: 12,  reward: 1.4  },
+      { name: 'Attune to a ley line',                dur: 18,  reward: 2.1  },
+      { name: 'Draw Quintessence from ambient magic',dur: 27,  reward: 3.3  },
+      { name: 'Acquire power through sacrifice',     dur: 41,  reward: 5.0  },
+      { name: "Channel a Node's energy",             dur: 62,  reward: 7.8  },
+      { name: 'Enter a deep trance state',           dur: 93,  reward: 12.0 },
+      { name: 'Commune with the Tellurium',          dur: 140, reward: 18.5 },
+      { name: 'Create your own personal Node',       dur: 210, reward: 28.5 },
+    ],
+    unlocks: [0, 5, 15, 30, 50, 75, 105, 140, 180, 225],
+  },
 };
 
 const SKILL_IDS = Object.keys(SKILLS);
@@ -973,6 +993,8 @@ const UNLOCKS = [
     cond: () => S.spheres.prime >= 1, progress: () => `Prime ${S.spheres.prime} / 1` },
   { id: 'teach', name: 'Teach', desc: 'Spend Renown to recruit apprentices who gather resources for you.',
     res: 'renown', amount: 50 },
+  { id: 'meditate', name: 'Meditate', desc: 'Gather Quintessence by magical means — costless and riskless.',
+    cond: () => S.spheres.prime >= 2, progress: () => `Prime ${S.spheres.prime} / 2` },
 ];
 
 function isSkillUnlocked(id) { return !(id in S.unlocked) || S.unlocked[id]; }
@@ -1044,7 +1066,8 @@ const UPGRADE_NAMES = {
 };
 
 // Teach joins the upgrade list as a pseudo-skill (its level lives in S.teach).
-const UPGRADE_SKILLS = [...SKILL_IDS, 'teach'];
+// Only skills with a defined upgrade set take part (Meditate has none).
+const UPGRADE_SKILLS = [...SKILL_IDS, 'teach'].filter(id => UPGRADE_NAMES[id]);
 
 const UPGRADES = [];
 for (const skillId of UPGRADE_SKILLS) {
@@ -1721,8 +1744,9 @@ const S = {
     explore:     { lv: 0, xp: 0 },
     fight:       { lv: 0, xp: 0 },
     barter:      { lv: 0, xp: 0 },
+    meditate:    { lv: 0, xp: 0 },
   },
-  unlocked: { fight: false, barter: false, spheres: false, craft: false, teach: false },
+  unlocked: { fight: false, barter: false, spheres: false, craft: false, teach: false, meditate: false },
   upgrades: {},   // purchased upgrade ids → true
   spheres: Object.fromEntries(SPHERES.map(sp => [sp.id, 0])),
   craftActive: [], // active crafted boons → [{ id, remaining }] (remaining = charges or seconds)
@@ -1973,7 +1997,8 @@ function renderUpgrades() {
     </div>
   `;
 
-  const groups = [...SKILL_IDS.filter(isSkillUnlocked), ...(S.unlocked.teach ? ['teach'] : [])];
+  const groups = [...SKILL_IDS.filter(isSkillUnlocked), ...(S.unlocked.teach ? ['teach'] : [])]
+    .filter(id => UPGRADES.some(u => u.skillId === id)); // skip skills without upgrades (Meditate)
   for (const skillId of groups) {
     const lv     = skillLevel(skillId);
     const effect = skillId === 'teach' ? 'apprentice output' : `${skillDisplayName(skillId)} payoff`;

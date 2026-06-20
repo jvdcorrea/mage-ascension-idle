@@ -32,7 +32,7 @@ global.prompt = () => null;
 global.alert = () => {};
 global.confirm = () => false;
 
-eval(script + '\n;globalThis.S = S; globalThis.Device = Device; globalThis.SKILLS = SKILLS;');
+eval(script + '\n;globalThis.S = S; globalThis.Device = Device; globalThis.SKILLS = SKILLS; globalThis.UPGRADES = UPGRADES;');
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -343,6 +343,31 @@ const tot0 = S.total.money;
 updatePassiveMoney(60); // 1 minute → +0.5% of 1000 = +5
 check('Matter 3 = +0.5% money per minute', Math.abs(S.res.money - 1005) < 1e-6);
 check('passive money adds to lifetime total', Math.abs(S.total.money - (tot0 + 5)) < 1e-6);
+zeroSpheres();
+
+// --- Sphere effects (Phase 3c: Meditate skill, unlocked by Prime 2) ---
+zeroSpheres();
+S.unlocked.meditate = false;
+check('Meditate exists and yields quintessence', !!SKILLS.meditate && SKILLS.meditate.resource === 'quintessence');
+check('Meditate has no upgrades', !UPGRADES.some(u => u.skillId === 'meditate'));
+check('Meditate locked initially', !isSkillUnlocked('meditate'));
+S.spheres.prime = 1; checkUnlocks();
+check('Meditate still locked at Prime 1', !isSkillUnlocked('meditate'));
+S.spheres.prime = 2; checkUnlocks();
+check('Prime 2 unlocks Meditate', isSkillUnlocked('meditate'));
+renderSidebar();
+check('sidebar shows Meditate', el('skill-sidebar').innerHTML.includes('Meditate'));
+
+S.running = null; S.setback = { on:false, remaining:0, total:0 }; S.teach.recruiting = null;
+startActivity('meditate', 0);
+check('Meditate activity starts', !!S.running && S.running.skillId === 'meditate');
+S.running = null;
+
+S.skills.meditate.lv = 7;
+saveGame();
+S.unlocked.meditate = false; S.skills.meditate.lv = 0;
+loadGame();
+check('save/load restores Meditate unlock + level', isSkillUnlocked('meditate') && S.skills.meditate.lv === 7);
 zeroSpheres();
 
 console.log(`\n${pass} passed, ${fail} failed`);
