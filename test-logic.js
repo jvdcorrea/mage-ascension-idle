@@ -370,5 +370,45 @@ loadGame();
 check('save/load restores Meditate unlock + level', isSkillUnlocked('meditate') && S.skills.meditate.lv === 7);
 zeroSpheres();
 
+// --- Sphere effects (Phase 4: setback negation) ---
+zeroSpheres();
+S.timeWardCd = 0;
+const realRandom = Math.random;
+
+Math.random = () => 0;   // a winning roll, but no spheres yet
+check('no negation without Corr 3 / Time 4', trySetbackNegated() === null);
+
+S.spheres.correspondence = 3;
+Math.random = () => 0.1; // < 0.5 → negate
+check('Corr 3 negates on a winning roll', trySetbackNegated() === 'corr');
+Math.random = () => 0.9; // ≥ 0.5 → no negate
+check('Corr 3 does not negate on a losing roll', trySetbackNegated() === null);
+
+// Time 4pt — periodic, independent of the roll
+zeroSpheres();
+S.timeWardCd = 0;
+S.spheres.time = 4;
+Math.random = () => 0.9;
+check('Time 4 negates when ready', trySetbackNegated() === 'time');
+check('Time 4 sets a 5-min cooldown', S.timeWardCd === 300);
+check('Time 4 cannot negate again while on cooldown', trySetbackNegated() === null);
+updateTimeWard(100);
+check('time ward cooldown ticks down', Math.abs(S.timeWardCd - 200) < 1e-9);
+updateTimeWard(1000);
+check('time ward cooldown floors at 0', S.timeWardCd === 0);
+check('Time 4 ready again after cooldown', trySetbackNegated() === 'time');
+
+Math.random = realRandom;
+
+// save/load round-trips the ward cooldown
+S.timeWardCd = 123; S.spheres.time = 4;
+saveGame();
+S.timeWardCd = 0;
+loadGame();
+check('save/load restores time ward cooldown', Math.abs(S.timeWardCd - 123) < 1e-6);
+
+zeroSpheres();
+S.timeWardCd = 0;
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

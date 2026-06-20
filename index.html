@@ -1312,6 +1312,18 @@ function sphereExtraApprenticeSlots() { return sph('mind') >= 2 ? 1 : 0; }   // 
 // Player setback recovery: Life 2pt halves it, Life 3pt thirds it (3 replaces 2).
 function spherePlayerSetbackDurMult() { return sph('life') >= 3 ? 1/3 : sph('life') >= 2 ? 1/2 : 1; }
 
+// ── Setback negation (Phase 4) — player-only; apprentices use Life 3pt. ──
+const TIME_WARD_COOLDOWN = 300; // s — Time 4pt negates one setback per 5 min
+function updateTimeWard(dt) { if (S.timeWardCd > 0) S.timeWardCd = Math.max(0, S.timeWardCd - dt); }
+// Returns 'corr' | 'time' if an incoming player setback is negated, else null.
+// Corr 3pt rolls first (free 50%); the Time 4pt ward is only spent when that
+// roll fails, so its 5-minute charge isn't wasted.
+function trySetbackNegated() {
+  if (sph('correspondence') >= 3 && Math.random() < 0.5) return 'corr';                        // Corr 3pt
+  if (sph('time') >= 4 && S.timeWardCd <= 0) { S.timeWardCd = TIME_WARD_COOLDOWN; return 'time'; } // Time 4pt
+  return null;
+}
+
 // Matter 3pt — passive Money: 0.5% of current Money per minute (compounds).
 function passiveMoneyRate() { return sph('matter') >= 3 ? 0.005 / 60 : 0; } // per second
 function updatePassiveMoney(dt) {
@@ -1755,6 +1767,7 @@ const S = {
   tab:     'study',
   running: null,   // { skillId, idx, progress, dur }
   setback: { on: false, remaining: 0, total: 0 },
+  timeWardCd: 0,   // s until the Time 4pt setback-ward is ready again (0 = ready)
 };
 
 // Transient notice for the bottom bar (e.g. ran out of Power); not saved.
@@ -1795,6 +1808,8 @@ function tick(now) {
 
   // Matter 3pt passive Money — runs in parallel, even during a setback.
   if (updatePassiveMoney(dt)) renderResources();
+  // Time 4pt setback-ward cooldown counts down in real time.
+  updateTimeWard(dt);
 
   if (S.setback.on) {
     S.setback.remaining = Math.max(0, S.setback.remaining - dt);
@@ -1860,8 +1875,13 @@ function tick(now) {
       // Risky activities may trigger a setback ('setback' boons and sphere effects reduce the odds)
       const chance = setbackChance(sk, act, ss.lv) * craftFactor(skillId, 'setback') * sphereSetbackMult(skillId);
       if (chance > 0 && Math.random() * 100 < chance) {
-        const sbDur = setbackDur(act) * spherePlayerSetbackDurMult(); // Life 2/3pt shorten recovery
-        S.setback = { on: true, remaining: sbDur, total: sbDur };
+        const negated = trySetbackNegated(); // Corr 3pt / Time 4pt may avert it
+        if (negated) {
+          flashSaveStatus(negated === 'corr' ? 'Pierced space — setback averted!' : 'Time bends — setback averted!');
+        } else {
+          const sbDur = setbackDur(act) * spherePlayerSetbackDurMult(); // Life 2/3pt shorten recovery
+          S.setback = { on: true, remaining: sbDur, total: sbDur };
+        }
       }
 
       // Spend a charge from any charge-based boon that applied to this activity
@@ -2459,6 +2479,7 @@ function serializeSave() {
     tab: S.tab,
     running: S.running,
     setback: S.setback,
+    timeWardCd: S.timeWardCd,
   });
 }
 
@@ -2606,6 +2627,8 @@ function applySave(d) {
       ? d.setback.total : d.setback.remaining;
     S.setback = { on: true, remaining: Math.min(d.setback.remaining, total), total };
   }
+  S.timeWardCd = (typeof d.timeWardCd === 'number' && isFinite(d.timeWardCd))
+    ? clamp(d.timeWardCd, 0, TIME_WARD_COOLDOWN) : 0;
 }
 
 function loadGame() {
