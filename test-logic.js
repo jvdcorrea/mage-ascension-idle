@@ -239,5 +239,58 @@ check('Entropy 5 = 20% double-reward', sphereDoubleRewardChance() === 0.20);
 
 zeroSpheres(); // leave state clean
 
+// --- Sphere effects (Phase 2: apprentice modifiers & special apprentices) ---
+const freshTeach = () => { S.teach = { lv: 0, xp: 0, nextId: 1, apprentices: [], recruiting: null }; };
+zeroSpheres(); freshTeach();
+
+check('apprentice slots base = 1', maxApprentices() === 1);
+S.spheres.mind = 2;
+check('Mind 2 = +1 apprentice slot', maxApprentices() === 2);
+S.teach.lv = 20;
+check('slots stack: teach 20 + Mind 2 = 4', maxApprentices() === 4);
+
+check('appr speed mult 1 by default', sphereApprSpeedMult() === 1);
+S.spheres.life = 4;
+check('Life 4 = apprentices 2x faster', sphereApprSpeedMult() === 2 && Math.abs(apprenticeDur(0) - 5) < 1e-9);
+check('Life ≥3 = appr setback recovery halved', sphereApprSetbackDurMult() === 0.5);
+check('Life ≥3 = player recovery ÷3', Math.abs(spherePlayerSetbackDurMult() - 1/3) < 1e-9);
+S.spheres.life = 2;
+check('Life 2 = player recovery ÷2', spherePlayerSetbackDurMult() === 0.5);
+check('Life 2 (not 3) = appr recovery unchanged', sphereApprSetbackDurMult() === 1);
+
+check('appr xp mult 1 by default', sphereApprXpMult() === 1);
+S.spheres.mind = 5;
+check('Mind 5 = apprentice xp 3x', sphereApprXpMult() === 3);
+
+// Special apprentices (sphere-granted, slot-free, fixed level)
+zeroSpheres(); freshTeach();
+S.spheres.life = 5;
+grantSphereApprentices(true);
+check('Life 5 grants a lv-200 special apprentice',
+  S.teach.apprentices.length === 1 && S.teach.apprentices[0].special && S.teach.apprentices[0].level === 200);
+check('special apprentice does not occupy a slot', regularApprentices() === 0);
+grantSphereApprentices(true);
+check('special apprentice not granted twice', S.teach.apprentices.length === 1);
+S.spheres.spirit = 4;
+grantSphereApprentices(true);
+const djinn = S.teach.apprentices.find(a => a.source === 'spirit4');
+check('Spirit 4 grants Djinn (lv 100)', !!djinn && djinn.name === 'Djinn' && djinn.level === 100);
+S.spheres.spirit = 5;
+grantSphereApprentices(true);
+check('Spirit 5 grants a second lv-200 ally', S.teach.apprentices.filter(a => a.level === 200).length === 2);
+check('three specials, zero regular slots used', S.teach.apprentices.length === 3 && regularApprentices() === 0);
+dismissApprentice(djinn.id);
+check('special apprentice cannot be dismissed', S.teach.apprentices.some(a => a.id === djinn.id));
+
+// Special apprentices survive a save/load round-trip with level + identity intact
+saveGame();
+freshTeach();
+loadGame();
+const reload = S.teach.apprentices.filter(a => a.special);
+check('save/load keeps 3 specials at full level',
+  reload.length === 3 && reload.filter(a => a.level === 200).length === 2 && reload.some(a => a.name === 'Djinn'));
+
+zeroSpheres(); freshTeach();
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

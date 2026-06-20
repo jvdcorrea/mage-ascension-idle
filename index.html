@@ -1116,6 +1116,7 @@ function buySphere(id) {
   if (expAvail() < sphereCost(lv)) return;
   S.spheres[id]++;
   flashSaveStatus(SPHERES.find(sp => sp.id === id).name + ' ' + S.spheres[id]);
+  grantSphereApprentices();   // Life 5 / Spirit 4 / Spirit 5 may grant a special apprentice
   renderSidebar();
   renderActivities();
 }
@@ -1259,6 +1260,15 @@ function sphereSetbackMult(skillId) {
   return m;
 }
 
+// ── Apprentice-facing sphere effects (Phase 2) ──
+// These shape apprentices, separate from the player's own modifiers above.
+function sphereApprSpeedMult()        { return sph('life') >= 4 ? 2 : 1; }   // Life 4pt: work 2× faster
+function sphereApprXpMult()           { return sph('mind') >= 5 ? 3 : 1; }   // Mind 5pt: XP 3× faster
+function sphereApprSetbackDurMult()   { return sph('life') >= 3 ? 0.5 : 1; } // Life 3pt: recover 2× faster
+function sphereExtraApprenticeSlots() { return sph('mind') >= 2 ? 1 : 0; }   // Mind 2pt: +1 slot
+// Player setback recovery: Life 2pt halves it, Life 3pt thirds it (3 replaces 2).
+function spherePlayerSetbackDurMult() { return sph('life') >= 3 ? 1/3 : sph('life') >= 2 ? 1/2 : 1; }
+
 function actCost(skillId, act) {
   return act.cost * craftFactor(skillId, 'cost');
 }
@@ -1372,8 +1382,10 @@ function gainTeachXp(amt) {
   if (S.teach.lv !== before) checkUnlocks();
 }
 
-// Slots grow with the Teach level; hook left for future upgrades.
-function maxApprentices() { return 1 + Math.floor(S.teach.lv / 10); }
+// Slots grow with the Teach level, plus Mind 2pt. Special (sphere-granted)
+// apprentices don't occupy a slot, so slot checks count only regular ones.
+function maxApprentices() { return 1 + Math.floor(S.teach.lv / 10) + sphereExtraApprenticeSlots(); }
+function regularApprentices() { return S.teach.apprentices.filter(a => !a.special).length; }
 
 // Apprentices need twice the XP a player skill would need for the level.
 function xpForApprenticeLevel(lv) { return 2 * xpForLevel(lv); }
@@ -1386,7 +1398,8 @@ function apprenticeCostRatio(sk) {
 }
 // Teach upgrades (payoffMult) scale every apprentice's output.
 function apprenticeReward(level) { return APPR_BASE_REWARD * (1 + level * APPR_K) * payoffMult('teach'); }
-function apprenticeDur(level)    { return APPR_BASE_DUR / speed(level) * 2; }
+// Half a player's speed, then sped up by Life 4pt.
+function apprenticeDur(level)    { return APPR_BASE_DUR / speed(level) * 2 / sphereApprSpeedMult(); }
 
 // What a given Renown investment buys (central values; recruiting adds
 // a small random spread to the level).
@@ -1401,7 +1414,7 @@ function startRecruit(renown) {
   renown = Math.floor(renown);
   if (!isFinite(renown) || renown < 1) return;
   if (S.teach.recruiting) return;
-  if (S.teach.apprentices.length >= maxApprentices()) return;
+  if (regularApprentices() >= maxApprentices()) return;
   if (S.res.renown < renown) return;
 
   S.res.renown -= renown;
@@ -1429,9 +1442,49 @@ function assignApprentice(id, skillId) {
 function dismissApprentice(id) {
   const i = S.teach.apprentices.findIndex(x => x.id === id);
   if (i < 0) return;
+  if (S.teach.apprentices[i].special) return; // sphere-bound allies can't be dismissed
   S.teach.apprentices.splice(i, 1);
   renderSidebar();
   renderActivities();
+}
+
+// ── Special apprentices (sphere-granted; don't occupy a slot) ──
+// Life 5 / Spirit 5 forge a named lv-200 ally; Spirit 4 binds a lv-100 Djinn.
+function makeSpecialApprentice(source, level, name) {
+  return {
+    id: S.teach.nextId++, special: true, source, name,
+    level, xp: 0, assign: null, progress: 0, dur: 0, stalled: false,
+    setback: { on: false, remaining: 0, total: 0 },
+  };
+}
+function specialApprenticeName(source, silent) {
+  if (source === 'spirit4') return 'Djinn';
+  const fallback = source === 'life5' ? 'Homunculus' : 'Ephemera';
+  const flavor = source === 'life5'
+    ? 'You weave a flawless living being to aid your Ascension. Name it:'
+    : 'You forge a powerful spirit to aid your Ascension. Name it:';
+  let nm = null;
+  if (!silent && typeof prompt === 'function') nm = prompt(flavor);
+  return (nm && nm.trim()) || fallback;
+}
+const SPECIAL_APPR = [
+  { source: 'life5',   need: () => sph('life')   >= 5, level: 200 },
+  { source: 'spirit4', need: () => sph('spirit') >= 4, level: 100 },
+  { source: 'spirit5', need: () => sph('spirit') >= 5, level: 200 },
+];
+// Grant any special apprentice whose sphere threshold is met and which the
+// player doesn't already have. `silent` skips the naming prompt (used on load).
+function grantSphereApprentices(silent) {
+  let granted = false;
+  for (const s of SPECIAL_APPR) {
+    if (!s.need()) continue;
+    if (S.teach.apprentices.some(a => a.source === s.source)) continue;
+    const name = specialApprenticeName(s.source, silent);
+    S.teach.apprentices.push(makeSpecialApprentice(s.source, s.level, name));
+    flashSaveStatus('A bound ally joins you: ' + name + '!');
+    granted = true;
+  }
+  return granted;
 }
 
 // Advance recruiting and every apprentice. Returns true only on a
@@ -1498,14 +1551,18 @@ function updateTeach(dt) {
 
       gainRes(sk.resource, reward);
 
-      a.xp += APPR_BASE_DUR;
-      while (a.level < APPR_MAX_LEVEL && a.xp >= xpForApprenticeLevel(a.level + 1)) a.level++;
+      // Special apprentices have a fixed (sphere-granted) level; only regular
+      // ones train up. Mind 5pt speeds the XP gain.
+      if (!a.special) {
+        a.xp += APPR_BASE_DUR * sphereApprXpMult();
+        while (a.level < APPR_MAX_LEVEL && a.xp >= xpForApprenticeLevel(a.level + 1)) a.level++;
+      }
 
-      // Risky skills may backfire — locks only this apprentice.
+      // Risky skills may backfire — locks only this apprentice. Life 3pt shortens recovery.
       if (sk.risky) {
         const chance = setbackChance(sk, { risk: APPR_RISK }, a.level);
         if (chance > 0 && Math.random() * 100 < chance) {
-          const sbDur = setbackDur({ risk: APPR_RISK, dur: APPR_BASE_DUR });
+          const sbDur = setbackDur({ risk: APPR_RISK, dur: APPR_BASE_DUR }) * sphereApprSetbackDurMult();
           a.setback = { on: true, remaining: sbDur, total: sbDur };
         }
       }
@@ -1724,7 +1781,7 @@ function tick(now) {
       // Risky activities may trigger a setback ('setback' boons and sphere effects reduce the odds)
       const chance = setbackChance(sk, act, ss.lv) * craftFactor(skillId, 'setback') * sphereSetbackMult(skillId);
       if (chance > 0 && Math.random() * 100 < chance) {
-        const sbDur = setbackDur(act);
+        const sbDur = setbackDur(act) * spherePlayerSetbackDurMult(); // Life 2/3pt shorten recovery
         S.setback = { on: true, remaining: sbDur, total: sbDur };
       }
 
@@ -1835,7 +1892,7 @@ function renderSidebar() {
     </div>` : '') +
     (S.unlocked.teach ? `<div class="skill-tab${S.tab === 'teach' ? ' active' : ''}" onclick="selectTab('teach')">
       Teach${S.running && S.running.teach ? ' <span class="active-mark" title="Activity in progress">⛤</span>' : ''}
-      <div class="skill-lv">Lv ${S.teach.lv} · ${S.teach.apprentices.length}/${maxApprentices()} appr.</div>
+      <div class="skill-lv">Lv ${S.teach.lv} · ${regularApprentices()}/${maxApprentices()} appr.</div>
     </div>` : '') +
     `<div class="sidebar-divider"></div>` +
     (S.unlocked.spheres ? `<div class="skill-tab${S.tab === 'spheres' ? ' active' : ''}" onclick="selectTab('spheres')">
@@ -2039,7 +2096,7 @@ function refreshCraftTimers() {
 let recruitAmount = 50;
 function canRecruit(amt) {
   return !S.teach.recruiting
-    && S.teach.apprentices.length < maxApprentices()
+    && regularApprentices() < maxApprentices()
     && amt >= 1 && S.res.renown >= amt;
 }
 function recruitPreviewText() {
@@ -2058,7 +2115,8 @@ function setRecruitPreset(v) { recruitAmount = Math.floor(v); renderActivities()
 function recruitFromInput() { startRecruit(recruitAmount); }
 
 function renderTeach() {
-  const used = S.teach.apprentices.length;
+  const used = regularApprentices();
+  const total = S.teach.apprentices.length;
   const max  = maxApprentices();
   const slotFree = used < max && !S.teach.recruiting;
 
@@ -2146,14 +2204,16 @@ function renderTeach() {
 
   // ── Apprentice roster ──
   html += `<div class="upgrade-group">Active roster</div>`;
-  if (used === 0) {
+  if (total === 0) {
     html += `<div class="unlock-desc">No apprentices yet. Recruit one above.</div>`;
   } else {
     for (const a of S.teach.apprentices) {
+      // Special apprentices have a fixed sphere-granted level and never train.
+      const atCap  = a.special || a.level >= APPR_MAX_LEVEL;
       const cumXp  = a.xp - xpForApprenticeLevel(a.level);
       const needed = xpForApprenticeLevel(a.level + 1) - xpForApprenticeLevel(a.level);
-      const xpPct  = a.level >= APPR_MAX_LEVEL ? 100 : clamp((cumXp / needed) * 100, 0, 100);
-      const xpText = a.level >= APPR_MAX_LEVEL ? 'max level' : `${Math.floor(xpPct)}% to next`;
+      const xpPct  = atCap ? 100 : clamp((cumXp / needed) * 100, 0, 100);
+      const xpText = a.special ? 'bound ally' : a.level >= APPR_MAX_LEVEL ? 'max level' : `${Math.floor(xpPct)}% to next`;
       // Activity-cycle progress — the live "is it working?" indicator.
       const cyclePct = (a.assign && a.dur > 0) ? clamp((a.progress / a.dur) * 100, 0, 100) : 0;
 
@@ -2176,10 +2236,13 @@ function renderTeach() {
         status = 'idle';
       }
 
+      const title = a.special
+        ? `✦ ${a.name} — Lv ${a.level} <span class="unlock-desc">(${xpText})</span>`
+        : `Apprentice — Lv ${a.level} <span class="unlock-desc">(${xpText})</span>`;
       html += `
         <div class="unlock-item${a.setback.on || a.stalled ? ' dimmed' : ''}">
           <div style="flex:1">
-            <div class="unlock-name">Apprentice — Lv ${a.level} <span class="unlock-desc">(${xpText})</span></div>
+            <div class="unlock-name">${title}</div>
             <div class="prog-wrap" style="margin:6px 0"><div class="prog-fill" id="appr-prog-${a.id}" style="width:${cyclePct}%"></div></div>
             <div class="unlock-desc">
               Assignment:
@@ -2188,7 +2251,7 @@ function renderTeach() {
             </div>
           </div>
           <div class="unlock-state">
-            <button class="buy-btn" onclick="dismissApprentice(${a.id})">Dismiss</button>
+            ${a.special ? '<span class="unlock-desc">bound</span>' : `<button class="buy-btn" onclick="dismissApprentice(${a.id})">Dismiss</button>`}
           </div>
         </div>`;
     }
@@ -2375,20 +2438,27 @@ function applySave(d) {
     if (Array.isArray(t.apprentices)) {
       for (const a of t.apprentices) {
         if (!a || typeof a !== 'object') continue;
-        const level = clamp(Math.floor(a.level), 1, APPR_MAX_LEVEL);
+        // Special (sphere-granted) apprentices keep their fixed high level and
+        // identity; regular ones clamp to the normal cap.
+        const special = a.special === true && typeof a.source === 'string';
+        const level = special
+          ? Math.max(1, Math.floor(a.level))
+          : clamp(Math.floor(a.level), 1, APPR_MAX_LEVEL);
         const assign = (a.assign && ASSIGNABLE.includes(a.assign)) ? a.assign : null;
         const sb = a.setback || {};
         const sbTotal = (typeof sb.total === 'number' && isFinite(sb.total) && sb.total > 0) ? sb.total : 0;
         const sbRem   = (typeof sb.remaining === 'number' && isFinite(sb.remaining)) ? clamp(sb.remaining, 0, sbTotal) : 0;
-        S.teach.apprentices.push({
+        const loaded = {
           id: S.teach.nextId++,
           level,
-          xp: (typeof a.xp === 'number' && isFinite(a.xp)) ? Math.max(xpForApprenticeLevel(level), a.xp) : xpForApprenticeLevel(level),
+          xp: (typeof a.xp === 'number' && isFinite(a.xp)) ? Math.max(special ? 0 : xpForApprenticeLevel(level), a.xp) : (special ? 0 : xpForApprenticeLevel(level)),
           assign,
           progress: (typeof a.progress === 'number' && isFinite(a.progress)) ? Math.max(0, a.progress) : 0,
           dur: 0,
           setback: { on: sbRem > 0, remaining: sbRem, total: sbTotal },
-        });
+        };
+        if (special) { loaded.special = true; loaded.source = a.source; loaded.name = (typeof a.name === 'string' && a.name.trim()) ? a.name : 'Bound Ally'; loaded.stalled = false; }
+        S.teach.apprentices.push(loaded);
       }
     }
     if (t.recruiting && typeof t.recruiting === 'object') {
@@ -2451,6 +2521,7 @@ function loadGame() {
   if (!raw) return false;
   try {
     applySave(JSON.parse(raw));
+    grantSphereApprentices(true); // migrate saves that met a threshold pre-feature
     return true;
   } catch (e) {
     console.warn('Could not load save:', e);
@@ -2520,6 +2591,7 @@ function renderAll() {
 // guarded: under the headless test stubs (no document.createElement) the
 // menu simply never builds, so it can't break the logic tests.
 function cheatRefresh(msg) {
+  grantSphereApprentices(true); // cheating Life/Spirit grants the special apprentices too
   checkUnlocks();
   renderAll();
   updateCheatLabels();
