@@ -1880,11 +1880,20 @@ function tick(now) {
     S.running.dur = dur;
 
     if (S.running.progress >= dur) {
+      const tlvBefore = S.teach.lv;
       gainTeachXp(act.xp * sphereXpMult());
       S.running = { teach: true, idx: S.running.idx, progress: 0, dur: teachActDur(act) };
       renderResources();
-      renderSidebar();
-      if (S.tab === 'teach') renderActivities();
+      // Full rebuild only when Teach levels up; otherwise tick the XP bar in
+      // place so the panel's rows/fields survive (rebuilding every completion
+      // would swallow clicks and drop focus from the recruit input/dropdowns).
+      if (S.teach.lv !== tlvBefore) {
+        renderSidebar();
+        if (S.tab === 'teach' && !panelFieldFocused()) renderActivities();
+        else if (S.tab === 'teach') refreshActivityXpBar();
+      } else {
+        refreshActivityXpBar();
+      }
     }
 
     renderBottomBar();
@@ -1915,7 +1924,8 @@ function tick(now) {
       ss.xp += act.dur * craftFactor(skillId, 'xp') * sphereXpMult();
       const lvBefore = ss.lv;
       while (ss.xp >= xpForLevel(ss.lv + 1)) ss.lv++;
-      if (ss.lv !== lvBefore) checkUnlocks();
+      const leveled = ss.lv !== lvBefore;
+      if (leveled) checkUnlocks();
 
       // Risky activities may trigger a setback ('setback' boons and sphere effects reduce the odds)
       const chance = setbackChance(sk, act, ss.lv) * craftFactor(skillId, 'setback') * sphereSetbackMult(skillId);
@@ -1941,8 +1951,18 @@ function tick(now) {
       }
 
       renderResources();
-      renderSidebar();
-      if (S.tab === skillId || S.tab === 'unlocks' || S.tab === 'upgrades' || S.tab === 'spheres' || S.tab === 'craft') renderActivities();
+      // A full rebuild only on a structural change (level-up alters reward/risk/
+      // lock text and may unlock activities/tabs; a halt clears the running row).
+      // Otherwise just tick the XP bar in place so the clickable rows survive —
+      // rebuilding every completion would replace them mid-click (see
+      // refreshActivityXpBar / refreshCraftTimers).
+      const halted = !S.running;
+      if (leveled || halted) {
+        renderSidebar();
+        if (S.tab === skillId || S.tab === 'unlocks' || S.tab === 'upgrades' || S.tab === 'spheres' || S.tab === 'craft') renderActivities();
+      } else {
+        refreshActivityXpBar();
+      }
     }
 
     renderBottomBar();
@@ -2237,6 +2257,36 @@ function refreshCraftTimers() {
   }
 }
 
+// Update only the current skill/Teach panel's XP bar + header in place,
+// without rebuilding the clickable activity rows — otherwise the per-completion
+// re-render would replace those rows mid-click and swallow tab/activity presses
+// (same rationale as refreshCraftTimers / refreshTeachLive).
+function refreshActivityXpBar() {
+  const bar = document.getElementById('panel-xp-bar');
+  if (!bar) return; // not on a skill/Teach tab
+  let title, label, pct;
+  if (S.tab === 'teach') {
+    const cumXp  = S.teach.xp - xpForTeachLevel(S.teach.lv);
+    const needed = xpToNextTeach(S.teach.lv);
+    pct   = Math.min(100, (cumXp / needed) * 100);
+    title = `Teach — Level ${S.teach.lv}`;
+    label = `${Math.floor(cumXp)} / ${needed} XP · ${fmt(S.res.renown)} Renown`;
+  } else {
+    const sk = SKILLS[S.tab], ss = S.skills[S.tab];
+    if (!sk) return;
+    const cumXp  = ss.xp - xpForLevel(ss.lv);
+    const needed = xpToNext(ss.lv);
+    pct   = Math.min(100, (cumXp / needed) * 100);
+    title = `${sk.name} — Level ${ss.lv}`;
+    label = `${Math.floor(cumXp)} / ${needed} XP`;
+  }
+  const titleEl = document.getElementById('panel-title');
+  const labelEl = document.getElementById('panel-xp-label');
+  if (titleEl) titleEl.textContent = title;
+  if (labelEl) labelEl.textContent = label;
+  bar.style.width = pct + '%';
+}
+
 // Desired Renown investment for the next recruit (UI-only, not saved).
 let recruitAmount = 50;
 function canRecruit(amt) {
@@ -2271,10 +2321,10 @@ function renderTeach() {
 
   let html = `
     <div class="panel-header">
-      <h2>Teach — Level ${S.teach.lv}</h2>
-      <span class="xp-label">${Math.floor(cumXp)} / ${needed} XP · ${fmt(S.res.renown)} Renown</span>
+      <h2 id="panel-title">Teach — Level ${S.teach.lv}</h2>
+      <span class="xp-label" id="panel-xp-label">${Math.floor(cumXp)} / ${needed} XP · ${fmt(S.res.renown)} Renown</span>
     </div>
-    <div class="xp-bar-wrap"><div class="xp-bar" style="width:${xpPct}%"></div></div>
+    <div class="xp-bar-wrap"><div class="xp-bar" id="panel-xp-bar" style="width:${xpPct}%"></div></div>
   `;
 
   // ── Didactics: player activities that train Teach directly ──
@@ -2422,10 +2472,10 @@ function renderActivities() {
 
   let html = `
     <div class="panel-header">
-      <h2>${sk.name} — Level ${ss.lv}</h2>
-      <span class="xp-label">${Math.floor(cumXp)} / ${needed} XP</span>
+      <h2 id="panel-title">${sk.name} — Level ${ss.lv}</h2>
+      <span class="xp-label" id="panel-xp-label">${Math.floor(cumXp)} / ${needed} XP</span>
     </div>
-    <div class="xp-bar-wrap"><div class="xp-bar" style="width:${pct}%"></div></div>
+    <div class="xp-bar-wrap"><div class="xp-bar" id="panel-xp-bar" style="width:${pct}%"></div></div>
   `;
 
   sk.activities.forEach((act, i) => {
